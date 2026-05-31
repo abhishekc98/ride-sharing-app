@@ -1,0 +1,15 @@
+node_modules
+.next
+dist
+.turbo
+coverage
+*.env
+*.env.local
+*.env.keys
+.DS_Store
+*.log
+.vercel
+.railway
+__pycache__
+*.pyc
+.venv

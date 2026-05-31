@@ -1,0 +1,7 @@
+version: '3.9'
+
+# Root-level alias — runs full dev infra from project root
+# Usage: docker compose up -d
+
+include:
+  - infrastructure/docker-compose.yml
