@@ -1,0 +1,27 @@
+{
+  "name": "@ride/notification-service",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ride/shared-types": "workspace:*",
+    "fastify": "^4.28.1",
+    "firebase-admin": "^12.4.0",
+    "kafkajs": "^2.2.4",
+    "pg": "^8.12.0",
+    "resend": "^4.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.17.0",
+    "typescript": "^5.6.3"
+  }
+}

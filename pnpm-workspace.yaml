@@ -9,3 +9,4 @@ allowBuilds:
   unrs-resolver: true
   lightningcss: true
   '@firebase/util': true
+  msgpackr-extract: true
