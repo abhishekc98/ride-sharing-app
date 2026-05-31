@@ -1,28 +1,23 @@
-import { Kafka } from 'kafkajs'
+// Replaced Kafka with Redis Streams via Upstash Redis.
+// API is identical — callers use publishEvent() unchanged.
+import Redis from 'ioredis'
 
-let producer: any = null
+let client: Redis | null = null
 
-export async function getProducer() {
-  if (!producer) {
-    const kafka = new Kafka({
-      clientId: 'payment-service',
-      brokers: (process.env.KAFKA_BROKERS ?? 'localhost:9092').split(','),
-      ssl: process.env.KAFKA_SSL === 'true',
-      sasl: process.env.KAFKA_USERNAME
-        ? { mechanism: 'scram-sha-256', username: process.env.KAFKA_USERNAME, password: process.env.KAFKA_PASSWORD! }
-        : undefined,
+function getRedis(): Redis {
+  if (!client) {
+    client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
     })
-    producer = kafka.producer()
-    await producer.connect()
   }
-  return producer
+  return client
 }
 
-export async function publishEvent(topic: string, key: string, value: object) {
+export async function publishEvent(stream: string, key: string, data: object): Promise<void> {
   try {
-    const p = await getProducer()
-    await p.send({ topic, messages: [{ key, value: JSON.stringify(value) }] })
+    await getRedis().xadd(stream, '*', 'key', key, 'data', JSON.stringify(data))
   } catch (err) {
-    console.error('Kafka error:', err)
+    console.error(`[streams] publish error on ${stream}:`, err)
   }
 }

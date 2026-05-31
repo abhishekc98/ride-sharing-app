@@ -1,37 +1,23 @@
-import { Kafka } from 'kafkajs'
+// Replaced Kafka with Redis Streams via Upstash Redis.
+// API is identical — callers use publishEvent() unchanged.
+import Redis from 'ioredis'
 
-let kafka: Kafka | null = null
-let producerInstance: any = null
+let client: Redis | null = null
 
-export function getKafka() {
-  if (kafka) return kafka
-  kafka = new Kafka({
-    clientId: 'ride-service',
-    brokers: (process.env.KAFKA_BROKERS ?? 'localhost:9092').split(','),
-    ssl: process.env.KAFKA_SSL === 'true',
-    sasl: process.env.KAFKA_USERNAME
-      ? { mechanism: 'scram-sha-256', username: process.env.KAFKA_USERNAME, password: process.env.KAFKA_PASSWORD! }
-      : undefined,
-  })
-  return kafka
-}
-
-export async function getProducer() {
-  if (!producerInstance) {
-    producerInstance = getKafka().producer()
-    await producerInstance.connect()
-  }
-  return producerInstance
-}
-
-export async function publishEvent(topic: string, key: string, value: object) {
-  try {
-    const producer = await getProducer()
-    await producer.send({
-      topic,
-      messages: [{ key, value: JSON.stringify(value) }],
+function getRedis(): Redis {
+  if (!client) {
+    client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+      maxRetriesPerRequest: 3,
+      lazyConnect: true,
     })
+  }
+  return client
+}
+
+export async function publishEvent(stream: string, key: string, data: object): Promise<void> {
+  try {
+    await getRedis().xadd(stream, '*', 'key', key, 'data', JSON.stringify(data))
   } catch (err) {
-    console.error('Kafka publish error:', err)
+    console.error(`[streams] publish error on ${stream}:`, err)
   }
 }

@@ -12,7 +12,11 @@ npm install -g vercel railway
 ```
 
 Install Fly.io CLI:
-- Windows: `winget install Fly.io.flyctl`
+- **Windows** (PowerShell):
+  ```powershell
+  iwr https://fly.io/install.ps1 -useb | iex
+  ```
+  Restart terminal after install — `flyctl` will be in PATH.
 - Mac: `brew install flyctl`
 
 ---
@@ -86,21 +90,10 @@ REDIS_URL=rediss://default:xxxx@xxx.upstash.io:6379
 
 ---
 
-## Step 6 — Upstash Kafka (2 min)
+## Step 6 — ~~Upstash Kafka~~ (removed — now free)
 
-1. Still on https://upstash.com
-2. Go to Kafka → "Create Cluster"
-   - Name: `ride-kafka`
-   - Region: `ap-south-1`
-3. Click on cluster → "Details" → copy Bootstrap Server, Username, Password
-
-```
-# Paste into .env.keys:
-KAFKA_BROKERS=xxx-ap-south-1.upstash.io:9092
-KAFKA_USERNAME=xxx
-KAFKA_PASSWORD=xxx
-KAFKA_SSL=true
-```
+Kafka has been replaced with **Redis Streams** using the same Upstash Redis from Step 5.
+No extra service, no extra credentials needed.
 
 ---
 

@@ -13,7 +13,7 @@
     "@ride/shared-types": "workspace:*",
     "fastify": "^4.28.1",
     "firebase-admin": "^12.4.0",
-    "kafkajs": "^2.2.4",
+    "ioredis": "^5.4.1",
     "pg": "^8.12.0",
     "resend": "^4.0.0",
     "dotenv": "^16.4.5"
