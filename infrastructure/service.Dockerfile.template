@@ -1,0 +1,32 @@
+# Generic Dockerfile for Node.js microservices
+# Build: docker build --build-arg SERVICE=auth-service -t ride-auth .
+ARG SERVICE
+
+FROM node:20-alpine AS base
+RUN npm install -g pnpm
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json pnpm-workspace.yaml ./
+COPY packages/shared-types/package.json ./packages/shared-types/
+COPY services/${SERVICE}/package.json ./services/${SERVICE}/
+RUN pnpm install --frozen-lockfile
+
+FROM base AS builder
+COPY --from=deps /app/node_modules ./node_modules
+COPY packages/shared-types ./packages/shared-types
+COPY services/${SERVICE} ./services/${SERVICE}
+COPY tsconfig.base.json ./
+RUN cd packages/shared-types && npx tsc
+RUN cd services/${SERVICE} && npx tsc
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+ARG SERVICE
+COPY --from=builder /app/services/${SERVICE}/dist ./dist
+COPY --from=builder /app/services/${SERVICE}/package.json ./
+COPY --from=builder /app/packages/shared-types/dist ./node_modules/@ride/shared-types/dist
+COPY --from=builder /app/packages/shared-types/package.json ./node_modules/@ride/shared-types/
+RUN npm install --omit=dev --ignore-scripts
+CMD ["node", "dist/index.js"]
