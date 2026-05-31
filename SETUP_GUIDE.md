@@ -1,23 +1,15 @@
-# Setup Guide — 35-Minute Cloud Deployment
+# Setup Guide — 30-Minute Cloud Deployment
 
 Follow these steps in order. After each step, copy the key/URL into `.env.keys`.
 
 ---
 
-## Step 0 — Prerequisites (5 min)
+## Step 0 — Prerequisites (2 min)
 
 Install CLIs:
 ```bash
 npm install -g vercel railway
 ```
-
-Install Fly.io CLI:
-- **Windows** (PowerShell):
-  ```powershell
-  iwr https://fly.io/install.ps1 -useb | iex
-  ```
-  Restart terminal after install — `flyctl` will be in PATH.
-- Mac: `brew install flyctl`
 
 ---
 
@@ -206,13 +198,20 @@ EMAIL_FROM=noreply@yourdomain.com
 
 ---
 
-## Step 12 — Fly.io (2 min)
+## Step 12 — UptimeRobot (2 min)
 
-1. Go to https://fly.io/app/sign-up
-2. Sign up → verify email (requires credit card for account, but won't be charged on free tier)
-3. Run: `fly auth login`
+The WebSocket Hub runs on Railway (free tier sleeps after 30 min idle).
+UptimeRobot pings it every 5 minutes to keep it alive.
 
-No keys needed — deploy.sh uses flyctl CLI.
+1. Go to https://uptimerobot.com → Sign up free
+2. Dashboard → "Add New Monitor"
+   - Monitor type: HTTP(s)
+   - Friendly name: `RideApp WebSocket Hub`
+   - URL: `https://websocket-hub.up.railway.app/health` (update after deploy)
+   - Monitoring interval: 5 minutes
+3. Repeat for `api-gateway` and `ride-service`
+
+No keys needed — just a Railway service URL.
 
 ---
 
@@ -222,7 +221,6 @@ Now authenticate the CLIs:
 ```bash
 vercel login       # GitHub OAuth in browser
 railway login      # GitHub OAuth in browser
-fly auth login     # opens browser
 ```
 
 Then deploy everything:

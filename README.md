@@ -45,7 +45,7 @@ pnpm --filter @ride/admin dev             # :3002 (Admin)
 
 ## Cloud Deployment
 
-See `SETUP_GUIDE.md` for the 35-minute account setup, then:
+See `SETUP_GUIDE.md` for the 30-minute account setup, then:
 
 ```bash
 ./deploy.sh
@@ -60,7 +60,7 @@ Admin Dashboard ──┘         │
                        WebSocket Hub ──▶ Real-time tracking
 ```
 
-**Stack**: Next.js 14 · Node.js/Fastify · Python/FastAPI · Socket.io · Redis · Kafka · PostgreSQL · Leaflet · Vercel · Railway · Fly.io
+**Stack**: Next.js 14 · Node.js/Fastify · Python/FastAPI · Socket.io · Redis Streams · PostgreSQL · Leaflet · Vercel · Railway
 
 ## Services
 
@@ -76,4 +76,4 @@ Admin Dashboard ──┘         │
 | payment-service | 3108 | Razorpay + wallet |
 | notification-service | 3109 | FCM push + email |
 | rating-service | 3110 | Post-ride ratings |
-| websocket-hub | 3200 | Real-time Socket.io (Fly.io) |
+| websocket-hub | 3200 | Real-time Socket.io (Railway, kept awake by UptimeRobot) |

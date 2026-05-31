@@ -144,7 +144,7 @@ flowchart LR
         RT2[GET /ratings/ride/:id]
     end
 
-    subgraph WS["WebSocket Hub :3200\nFly.io"]
+    subgraph WS["WebSocket Hub :3200\nRailway (kept awake by UptimeRobot)"]
         WS1[ride:id room]
         WS2[user:id room]
         WS3[admin:ops room]
@@ -482,7 +482,7 @@ flowchart TB
         CH5[channel:\ndrivers:availability]
     end
 
-    subgraph WSCluster["WebSocket Hub Cluster\nFly.io — can scale horizontally"]
+    subgraph WSCluster["WebSocket Hub Cluster\nRailway — kept awake by UptimeRobot pings"]
         subgraph Pod1["WS Pod 1"]
             S1[Socket.io Server]
             RA1[Redis Adapter]
@@ -813,17 +813,13 @@ flowchart TB
         RW8[payment-service :3108]
         RW9[notification-service :3109]
         RW10[rating-service :3110]
-        UPT[UptimeRobot pings\nevery 5 min\nkeeps services awake]
-    end
-
-    subgraph Fly["Fly.io — Free Tier\nAlways ON - no sleep"]
-        WS[websocket-hub :3200\nSocket.io + Redis adapter\n256MB VM — persistent connections]
+        WS[websocket-hub :3200\nSocket.io + Redis adapter]
+        UPT[UptimeRobot pings every 5 min\nkeeps all services awake]
     end
 
     subgraph Data["Data Layer"]
         NEON[(Neon\nPostgreSQL\nServerless\nap-south-1)]
-        UPRD[(Upstash\nRedis\nGeo + Cache\n+ Pub/Sub)]
-        UPKF([Upstash\nKafka\nride events])
+        UPRD[(Upstash\nRedis\nGeo + Cache\n+ Pub/Sub + Streams)]
         ATLAS[(MongoDB Atlas\nM0 Free\nEvent log)]
     end
 
@@ -843,13 +839,12 @@ flowchart TB
     B -->|HTTPS| CF
     CF --> Vercel
     Vercel -->|API calls| Railway
-    Vercel -->|WSS| Fly
+    Vercel -->|WSS| Railway
 
-    Railway & Fly --> Data
-    Railway & Fly --> ThirdParty
+    Railway --> Data
+    Railway --> ThirdParty
 
     GH --> GA --> REG --> Railway
-    REG --> Fly
 ```
 
 ---
@@ -991,7 +986,7 @@ POST /rides/rideA/accept
     ↓
 Railway env vars (set by deploy.sh)       → backend services
 Vercel env vars (set by deploy.sh)        → NEXT_PUBLIC_* frontend vars
-Fly.io secrets (set by deploy.sh)         → websocket-hub
+Railway env vars (set by deploy.sh)       → websocket-hub (same Railway project)
 ```
 
 ---
