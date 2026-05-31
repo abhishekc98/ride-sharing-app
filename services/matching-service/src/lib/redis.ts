@@ -22,6 +22,9 @@ export async function getNearbyOnlineDrivers(
     })
   )
 
+  // Double-check state hash: GEORADIUS result and state hash must BOTH say online.
+  // claimDriver() removes from geo AND sets state to on_ride atomically, but there
+  // is a tiny window between the two pipeline commands. Checking both closes it.
   return drivers.filter((d) => d.state.status === 'online')
 }
 

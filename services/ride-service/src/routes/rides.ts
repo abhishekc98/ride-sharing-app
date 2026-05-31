@@ -5,6 +5,7 @@ import { requireAuth } from '../lib/auth.js'
 import { getDb } from '../lib/db.js'
 import {
   acquireRideLock, releaseRideLock,
+  claimDriver, releaseDriver,
   publishRideState, publishRideRequest, publishRideRequestCancelled,
 } from '../lib/redis.js'
 import { publishEvent } from '../lib/kafka.js'
@@ -40,7 +41,6 @@ export async function rideRoutes(app: FastifyInstance) {
     const body = bookSchema.parse(req.body)
     const db = getDb()
 
-    // Get fare estimate
     let fareEstimate = 100, surgeMultiplier = 1
     try {
       const res = await axios.get(`${process.env.PRICING_SERVICE_URL}/api/v1/pricing/estimate`, {
@@ -65,7 +65,6 @@ export async function rideRoutes(app: FastifyInstance) {
     )
     const ride = rows[0]
 
-    // Trigger matching asynchronously
     triggerMatching(ride).catch(console.error)
 
     await publishEvent('ride.state_changed', ride.id, {
@@ -124,6 +123,24 @@ export async function rideRoutes(app: FastifyInstance) {
       `UPDATE rides SET status='cancelled', cancelled_by=$1, cancel_reason=$2, cancelled_at=NOW() WHERE id=$3`,
       [cancelledBy, reason, id]
     )
+
+    // If a driver was assigned, put them back online so they can accept other rides
+    if (ride.driver_id) {
+      const driverState = await db.query(
+        'SELECT pickup_lat, pickup_lng FROM rides WHERE id = $1', [id]
+      )
+      // Restore driver to online at their last known position
+      const { rows: [driverPos] } = await db.query(
+        `SELECT (hstore(d.state))-> 'lat' as lat, (hstore(d.state))->'lng' as lng
+         FROM drivers d WHERE d.id = $1`, [ride.driver_id]
+      ).catch(() => ({ rows: [{ lat: ride.pickup_lat, lng: ride.pickup_lng }] }))
+      await releaseDriver(
+        ride.driver_id,
+        parseFloat(driverPos?.lat ?? ride.pickup_lat),
+        parseFloat(driverPos?.lng ?? ride.pickup_lng)
+      )
+    }
+
     await publishRideState({ rideId: id, riderId: ride.rider_id, driverId: ride.driver_id, status: 'cancelled' })
     await publishEvent('ride.state_changed', id, { rideId: id, status: 'cancelled' })
     return { data: { message: 'Ride cancelled' } }
@@ -154,19 +171,31 @@ export async function rideRoutes(app: FastifyInstance) {
           if (ride.status !== 'searching')
             return reply.code(409).send({ error: 'Ride already taken', code: 'ALREADY_TAKEN' })
 
+          // FIX: Atomically claim the driver in Redis BEFORE updating DB.
+          // This removes the driver from the geo index and marks them on_ride,
+          // so any concurrent GEORADIUS query for another rider will NOT see
+          // this driver as available — preventing double-assignment.
+          await claimDriver(user.sub)
+
           await db.query(
             `UPDATE rides SET status='driver_assigned', driver_id=$1, assigned_at=NOW() WHERE id=$2`,
             [user.sub, id]
           )
+
+          // Cancel any other pending ride requests sent to this driver
+          // (they may have received requests from multiple concurrent riders)
+          await publishRideRequestCancelled(user.sub, id)
+
           await publishRideState({
             rideId: id, riderId: ride.rider_id, driverId: user.sub,
             status: 'driver_assigned',
           })
           await publishEvent('ride.state_changed', id, { rideId: id, status: 'driver_assigned', driverId: user.sub })
+
         } else if (action === 'decline') {
-          // Just notify, don't change DB state
           await publishRideRequestCancelled(user.sub, id)
           return { data: { message: 'Declined' } }
+
         } else {
           const timestamps: Record<string, string> = {
             arrived: '', start: 'started_at=NOW(),', end: 'ended_at=NOW(),',
@@ -179,6 +208,12 @@ export async function rideRoutes(app: FastifyInstance) {
           await publishEvent('ride.state_changed', id, { rideId: id, status: nextStatus })
 
           if (action === 'end') {
+            // Restore driver to online at the drop location so they can accept new rides
+            await releaseDriver(
+              ride.driver_id ?? user.sub,
+              parseFloat(ride.drop_lat),
+              parseFloat(ride.drop_lng)
+            )
             completeRide(ride, user.sub).catch(console.error)
           }
         }

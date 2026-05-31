@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>RideApp Architecture</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f1117;--sur:#1a1d27;--sur2:#222536;--bor:#2e3148;--acc:#ff6b35;--tx:#e2e8f0;--tx2:#94a3b8;--sw:260px}
+body{background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;display:flex;height:100vh;overflow:hidden}
+#sidebar{width:var(--sw);flex-shrink:0;background:var(--sur);border-right:1px solid var(--bor);display:flex;flex-direction:column;overflow:hidden}
+#sh{padding:18px 16px 14px;border-bottom:1px solid var(--bor)}
+#sh h1{font-size:14px;font-weight:700;color:var(--acc)}
+#sh p{font-size:11px;color:var(--tx2);margin-top:3px}
+#nav{flex:1;overflow-y:auto;padding:6px 0}
+#nav::-webkit-scrollbar{width:4px}
+#nav::-webkit-scrollbar-thumb{background:var(--bor);border-radius:2px}
+.ni{display:flex;align-items:center;gap:10px;padding:9px 16px;cursor:pointer;font-size:12.5px;color:var(--tx2);border-left:3px solid transparent;transition:.15s;user-select:none}
+.ni:hover{background:var(--sur2);color:var(--tx)}
+.ni.on{border-left-color:var(--acc);background:var(--sur2);color:var(--tx)}
+.ni .ic{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.ni .nm{font-size:10px;color:var(--tx2);margin-left:auto}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#top{height:52px;flex-shrink:0;background:var(--sur);border-bottom:1px solid var(--bor);display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:12px}
+#dt{font-size:15px;font-weight:600}
+#ds{font-size:11px;color:var(--tx2);margin-top:2px}
+#ctl{display:flex;gap:8px;align-items:center}
+.btn{background:var(--sur2);border:1px solid var(--bor);color:var(--tx);border-radius:6px;padding:5px 11px;font-size:12px;cursor:pointer;transition:.15s;white-space:nowrap}
+.btn:hover{background:var(--bor);border-color:var(--acc)}
+.btn.p{background:var(--acc);border-color:var(--acc);color:#fff}
+#zl{font-size:11px;color:var(--tx2);min-width:38px;text-align:center}
+#cw{flex:1;overflow:hidden;position:relative;background:var(--bg);background-image:radial-gradient(circle,#2e3148 1px,transparent 1px);background-size:24px 24px}
+#cv{width:100%;height:100%;display:flex;align-items:center;justify-content:center;position:relative}
+.panel{display:none;width:100%;height:100%;overflow:auto;position:absolute;inset:0;align-items:center;justify-content:center}
+.panel.on{display:flex}
+.pz{cursor:grab;user-select:none;padding:40px;flex-shrink:0}
+.pz:active{cursor:grabbing}
+.pz svg{display:block}
+#hint{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);backdrop-filter:blur(8px);border:1px solid var(--bor);border-radius:8px;padding:6px 14px;font-size:11px;color:var(--tx2);pointer-events:none;white-space:nowrap}
+#ld{position:fixed;inset:0;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;gap:16px}
+#ld h2{font-size:18px;color:var(--acc)}
+#ld p{font-size:13px;color:var(--tx2)}
+.sp{width:36px;height:36px;border:3px solid var(--bor);border-top-color:var(--acc);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div id="ld">
+  <div class="sp"></div>
+  <h2>Rendering diagram...</h2>
+  <p id="ll">Loading</p>
+</div>
+
+<div id="sidebar">
+  <div id="sh">
+    <h1>&#x1F6F5; RideApp Architecture</h1>
+    <p>Scroll to zoom &bull; Drag to pan &bull; Arrow keys to switch</p>
+  </div>
+  <div id="nav"></div>
+</div>
+
+<div id="main">
+  <div id="top">
+    <div><div id="dt">-</div><div id="ds">-</div></div>
+    <div id="ctl">
+      <button class="btn" id="bzm">- Zoom</button>
+      <span id="zl">100%</span>
+      <button class="btn" id="bzp">+ Zoom</button>
+      <button class="btn" id="brs">Reset</button>
+      <button class="btn p" id="bex">Download SVG</button>
+    </div>
+  </div>
+  <div id="cw">
+    <div id="cv"></div>
+    <div id="hint">Scroll to zoom &bull; Drag to pan &bull; Arrow keys to switch</div>
+  </div>
+</div>
+
+<script>
+// ── Mermaid config ──────────────────────────────────────────────────────────
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    primaryColor: '#7c6aff',
+    primaryTextColor: '#e2e8f0',
+    primaryBorderColor: '#2e3148',
+    lineColor: '#94a3b8',
+    secondaryColor: '#222536',
+    tertiaryColor: '#1a1d27',
+    background: '#1a1d27',
+    mainBkg: '#1a1d27',
+    nodeBorder: '#2e3148',
+    clusterBkg: '#222536',
+    titleColor: '#e2e8f0',
+    edgeLabelBackground: '#1a1d27',
+    signalColor: '#94a3b8',
+    signalTextColor: '#e2e8f0',
+    noteBkgColor: '#222536',
+    noteTextColor: '#e2e8f0',
+    noteBorderColor: '#2e3148',
+    loopTextColor: '#e2e8f0',
+    fontSize: '14px'
+  },
+  flowchart: { curve: 'linear', htmlLabels: true, padding: 20 },
+  sequence: { diagramMarginX: 40, diagramMarginY: 20, actorMargin: 60, width: 155, height: 50, useMaxWidth: false },
+  er: { useMaxWidth: false },
+  state: { useMaxWidth: false }
+})
+
+// ── Diagrams ────────────────────────────────────────────────────────────────
+// Rules: graph/flowchart only — flat edges between named nodes, no cross-subgraph connections.
+// Use <br/> for multiline labels (htmlLabels:true). No emoji in diagram code.
+const D = [
+  {
+    id: 'overview', icon: '&#x1F5FA;',
+    title: 'System Overview',
+    sub: 'All actors, PWAs, services and external APIs',
+    code: [
+      'graph LR',
+      '  R[Rider] --> RW[Rider PWA<br/>Vercel]',
+      '  D[Driver] --> DW[Driver PWA<br/>Vercel]',
+      '  A[Admin] --> AW[Admin Dashboard<br/>Vercel]',
+      '  RW -->|REST| GW[API Gateway<br/>Railway]',
+      '  DW -->|REST| GW',
+      '  AW -->|REST| GW',
+      '  RW -->|WSS| WS[WebSocket Hub<br/>Fly.io]',
+      '  DW -->|WSS| WS',
+      '  GW --> SVC[10 Microservices<br/>Node.js + Python]',
+      '  WS -->|pub/sub| RD[(Redis<br/>Upstash)]',
+      '  SVC --> DB[(PostgreSQL<br/>Neon)]',
+      '  SVC --> RD',
+      '  SVC --> MDB[(MongoDB<br/>Atlas)]',
+      '  SVC --> KF[Kafka<br/>Upstash]',
+      '  SVC -->|OTP + FCM| FB[Firebase]',
+      '  SVC -->|payments| RP[Razorpay]',
+      '  RW -->|map + routing| OSM[OpenStreetMap<br/>+ OSRM]',
+      '  DW -->|map + routing| OSM',
+      '  SVC -->|KYC docs| CL[Cloudinary]',
+      '  SVC -->|receipts| RS[Resend Email]'
+    ].join('\n')
+  },
+  {
+    id: 'containers', icon: '&#x1F4E6;',
+    title: 'Service Container Map',
+    sub: 'Endpoints and data store ownership per service',
+    code: [
+      'graph TB',
+      '  AuthSvc[Auth Service :3101<br/>verify-firebase, refresh, logout]',
+      '  UserSvc[User Service :3102<br/>profile, addresses, wallet]',
+      '  DriverSvc[Driver Service :3103<br/>register, vehicle, kyc, earnings]',
+      '  LocSvc[Location Service :3104<br/>ping, online, nearby]',
+      '  RideSvc[Ride Service :3105<br/>book, accept, start, end]',
+      '  MatchSvc[Matching Service :3106<br/>score + fanout to drivers]',
+      '  PriceSvc[Pricing Service :3107<br/>estimate + surge Python]',
+      '  PaySvc[Payment Service :3108<br/>Razorpay + wallet ledger]',
+      '  NotifSvc[Notification Service :3109<br/>Kafka consumer FCM + email]',
+      '  RatingSvc[Rating Service :3110<br/>mutual rating 24h window]',
+      '  PG[(PostgreSQL)]',
+      '  RDS[(Redis)]',
+      '  KFK[Kafka]',
+      '  AuthSvc --> RDS',
+      '  UserSvc --> PG',
+      '  DriverSvc --> PG',
+      '  LocSvc --> RDS',
+      '  RideSvc --> PG',
+      '  RideSvc -->|trigger| MatchSvc',
+      '  RideSvc -->|trigger| PaySvc',
+      '  RideSvc --> KFK',
+      '  MatchSvc --> RDS',
+      '  PriceSvc --> RDS',
+      '  PaySvc --> PG',
+      '  PaySvc --> KFK',
+      '  NotifSvc --> KFK',
+      '  RatingSvc --> PG'
+    ].join('\n')
+  },
+  {
+    id: 'auth', icon: '&#x1F510;',
+    title: 'Auth Flow - OTP to JWT',
+    sub: 'Firebase OTP delivery, JWT issuance, refresh token rotation',
+    code: [
+      'sequenceDiagram',
+      '  actor User',
+      '  participant PWA',
+      '  participant Firebase',
+      '  participant AuthSvc as Auth Service',
+      '  participant Redis',
+      '  participant DB as PostgreSQL',
+      '  User->>PWA: Enter phone number',
+      '  PWA->>Firebase: signInWithPhoneNumber',
+      '  Firebase-->>User: SMS OTP sent',
+      '  User->>PWA: Enter 6-digit OTP',
+      '  PWA->>Firebase: confirmationResult.confirm(otp)',
+      '  Firebase-->>PWA: Firebase ID Token',
+      '  Note over PWA,AuthSvc: Our system takes over',
+      '  PWA->>AuthSvc: POST /auth/verify-firebase',
+      '  AuthSvc->>Firebase: admin.auth().verifyIdToken',
+      '  Firebase-->>AuthSvc: phone_number verified',
+      '  AuthSvc->>DB: INSERT users ON CONFLICT DO UPDATE',
+      '  DB-->>AuthSvc: user record',
+      '  AuthSvc->>AuthSvc: sign accessToken 15min',
+      '  AuthSvc->>AuthSvc: sign refreshToken 30d + jti UUID',
+      '  AuthSvc->>Redis: SETEX refresh:userId:jti 2592000 "1"',
+      '  AuthSvc-->>PWA: accessToken + refreshToken + user',
+      '  Note over PWA: Stored in localStorage',
+      '  alt accessToken expired',
+      '    PWA->>AuthSvc: POST /auth/refresh',
+      '    AuthSvc->>Redis: GET refresh:userId:jti',
+      '    Redis-->>AuthSvc: "1" valid',
+      '    AuthSvc->>Redis: DEL old + SETEX new jti',
+      '    AuthSvc-->>PWA: new tokens rotated',
+      '  end',
+      '  Note over AuthSvc: Dev mode skips Firebase'
+    ].join('\n')
+  },
+  {
+    id: 'booking', icon: '&#x1F4F1;',
+    title: 'Ride Booking - End to End',
+    sub: 'One tap triggers 7 services',
+    code: [
+      'sequenceDiagram',
+      '  actor Rider',
+      '  actor Driver',
+      '  participant RiderPWA as Rider PWA',
+      '  participant DriverPWA as Driver PWA',
+      '  participant RideSvc as Ride Service',
+      '  participant PriceSvc as Pricing Service',
+      '  participant MatchSvc as Matching Service',
+      '  participant Redis',
+      '  participant WS as WebSocket Hub',
+      '  participant Kafka',
+      '  participant NotifSvc as Notification',
+      '  Rider->>RiderPWA: Enter pickup + drop + vehicle',
+      '  RiderPWA->>PriceSvc: GET /pricing/estimate',
+      '  PriceSvc->>Redis: GET surge:zone_id',
+      '  Redis-->>PriceSvc: multiplier',
+      '  PriceSvc-->>RiderPWA: fare estimate',
+      '  Rider->>RiderPWA: Tap Book Ride',
+      '  RiderPWA->>RideSvc: POST /rides',
+      '  RideSvc->>RideSvc: INSERT rides status=searching',
+      '  RideSvc->>Kafka: PUBLISH ride.state_changed',
+      '  RideSvc-->>RiderPWA: rideId',
+      '  RiderPWA->>WS: emit join_ride rideId',
+      '  RideSvc->>MatchSvc: POST /match async 202',
+      '  MatchSvc->>Redis: GEORADIUS 3km',
+      '  Redis-->>MatchSvc: nearby drivers',
+      '  MatchSvc->>MatchSvc: score and pick top 3',
+      '  MatchSvc->>Redis: PUBLISH ride:request x3',
+      '  Redis->>WS: pub/sub fanout',
+      '  WS->>DriverPWA: emit ride_request 30s countdown',
+      '  Driver->>DriverPWA: Tap Accept',
+      '  DriverPWA->>RideSvc: POST /rides/:id/accept',
+      '  RideSvc->>Redis: SETNX ride:id:lock',
+      '  RideSvc->>RideSvc: UPDATE status=driver_assigned',
+      '  RideSvc->>Redis: DEL lock + PUBLISH ride:state',
+      '  Redis->>WS: fanout',
+      '  WS->>RiderPWA: emit ride_state + driver info',
+      '  RiderPWA->>Rider: Show driver card',
+      '  RideSvc->>Kafka: PUBLISH driver_assigned',
+      '  Kafka->>NotifSvc: consume + FCM push'
+    ].join('\n')
+  },
+  {
+    id: 'matching', icon: '&#x1F3AF;',
+    title: 'Driver Matching Algorithm',
+    sub: 'Scoring, fan-out to top 3, retry with expanding radius',
+    code: [
+      'graph TD',
+      '  A[Ride Request] --> B[GEORADIUS drivers:geo:default<br/>within 3km radius]',
+      '  B --> C{Drivers found?}',
+      '  C -->|None| D[Wait 20s - expand to 6km]',
+      '  D --> E{Drivers found?}',
+      '  E -->|None| F[Wait 20s - expand to 9km]',
+      '  F --> G{Drivers found?}',
+      '  G -->|None| H[No drivers - notify rider]',
+      '  C -->|Yes| I[HGETALL driver:id:state<br/>for each result]',
+      '  E -->|Yes| I',
+      '  G -->|Yes| I',
+      '  I --> J[Filter: status == online]',
+      '  J --> K[Score each driver<br/>1/distance x0.5 + acceptance x0.3 + rating x0.2]',
+      '  K --> L[Sort DESC - pick top 3]',
+      '  L --> M[PUBLISH ride:request<br/>to top 3 simultaneously - 30s timeout]',
+      '  M --> N{First accept?}',
+      '  N -->|Yes within 30s| O[SETNX ride:id:lock<br/>claimDriver: HSET on_ride + ZREM geo<br/>UPDATE DB assigned<br/>DEL lock]',
+      '  O --> P[PUBLISH request_cancelled to all<br/>other drivers who got same request]',
+      '  P --> Q[Ride assigned - driver gone from geo index]',
+      '  N -->|All decline| R[Try next 3 drivers]',
+      '  R --> C'
+    ].join('\n')
+  },
+  {
+    id: 'gps', icon: '&#x1F4E1;',
+    title: 'Real-time GPS Tracking',
+    sub: 'Driver ping to Redis pub/sub to WebSocket to map animation',
+    code: [
+      'sequenceDiagram',
+      '  participant GPS as Driver Phone GPS',
+      '  participant DPWA as Driver PWA',
+      '  participant LocSvc as Location Service',
+      '  participant Redis',
+      '  participant WS as WebSocket Hub',
+      '  participant RPWA as Rider PWA',
+      '  Note over GPS,DPWA: watchPosition runs continuously',
+      '  loop Every 10s dev / 30s prod',
+      '    GPS->>DPWA: GeolocationPosition lat/lng/heading',
+      '    DPWA->>DPWA: Buffer ping in memory',
+      '    alt Every 5th ping - flush to geo index',
+      '      DPWA->>LocSvc: POST /location/ping',
+      '      LocSvc->>Redis: PIPELINE GEOADD + HSET',
+      '    end',
+      '    LocSvc->>Redis: PUBLISH driver:id:location',
+      '    Note over Redis,WS: Pub/Sub - free - no msg limit',
+      '    Redis->>WS: message on location channel',
+      '    WS->>WS: io.to driver_tracking:id room',
+      '    WS->>RPWA: emit driver_location lat/lng',
+      '    RPWA->>RPWA: Animate driver marker on map',
+      '  end'
+    ].join('\n')
+  },
+  {
+    id: 'payment', icon: '&#x1F4B3;',
+    title: 'Payment Processing Flow',
+    sub: 'Ride end to wallet deduction or Razorpay to driver 80% credit',
+    code: [
+      'sequenceDiagram',
+      '  actor Driver',
+      '  participant DPWA as Driver PWA',
+      '  participant RideSvc as Ride Service',
+      '  participant PaySvc as Payment Service',
+      '  participant DB as PostgreSQL',
+      '  participant Razorpay',
+      '  participant Kafka',
+      '  participant NotifSvc as Notification',
+      '  Driver->>DPWA: Tap End Ride',
+      '  DPWA->>RideSvc: POST /rides/:id/end',
+      '  RideSvc->>DB: UPDATE rides status=completed',
+      '  RideSvc->>PaySvc: POST /payments/charge fire-and-forget',
+      '  RideSvc-->>DPWA: completed',
+      '  PaySvc->>DB: SELECT idempotency_key - prevent double charge',
+      '  alt Wallet sufficient',
+      '    PaySvc->>DB: BEGIN',
+      '    PaySvc->>DB: UPDATE wallet_balance minus fare',
+      '    PaySvc->>DB: INSERT wallet_transactions debit',
+      '    PaySvc->>DB: COMMIT',
+      '  else Wallet insufficient',
+      '    PaySvc->>Razorpay: orders.create amount in paise',
+      '    Razorpay-->>PaySvc: orderId for Checkout',
+      '  end',
+      '  PaySvc->>DB: INSERT payments idempotency_key=ride:id',
+      '  Note over PaySvc: Credit driver 80 percent',
+      '  PaySvc->>DB: BEGIN',
+      '  PaySvc->>DB: UPDATE wallet_balance plus earning',
+      '  PaySvc->>DB: INSERT wallet_transactions credit',
+      '  PaySvc->>DB: COMMIT',
+      '  PaySvc->>Kafka: PUBLISH payment.processed',
+      '  Kafka->>NotifSvc: consume',
+      '  NotifSvc->>NotifSvc: FCM push + Resend email receipt'
+    ].join('\n')
+  },
+  {
+    id: 'websocket', icon: '&#x1F50C;',
+    title: 'WebSocket Architecture',
+    sub: 'Redis adapter syncs messages across all WS pods',
+    code: [
+      'graph LR',
+      '  LS[Location Service] --> CH1[driver:id:location<br/>Redis PubSub channel]',
+      '  RS[Ride Service] --> CH2[ride:state<br/>Redis PubSub channel]',
+      '  MS[Matching Service] --> CH3[ride:request<br/>Redis PubSub channel]',
+      '  CH1 --> RA[Redis Adapter<br/>in each WS pod]',
+      '  CH2 --> RA',
+      '  CH3 --> RA',
+      '  RA --> WS1[WS Pod 1<br/>Socket.io]',
+      '  RA --> WS2[WS Pod 2<br/>Socket.io]',
+      '  WS1 --> R1[ride:rideId<br/>Rider + Driver join]',
+      '  WS1 --> R2[user:userId<br/>personal room]',
+      '  WS2 --> R1',
+      '  WS2 --> R3[driver_tracking:id<br/>rider tracks driver]',
+      '  WS2 --> R4[admin:ops<br/>ops dashboard]',
+      '  R1 --> RiderPWA[Rider PWA]',
+      '  R1 --> DriverPWA[Driver PWA]',
+      '  R2 --> DriverPWA',
+      '  R3 --> RiderPWA',
+      '  R4 --> AdminDash[Admin Dashboard]'
+    ].join('\n')
+  },
+  {
+    id: 'statemachine', icon: '&#x1F504;',
+    title: 'Ride State Machine',
+    sub: 'All 8 states, transitions and side effects',
+    code: [
+      'stateDiagram-v2',
+      '  [*] --> REQUESTED : POST /rides',
+      '  REQUESTED --> SEARCHING : Ride Service creates record',
+      '  SEARCHING --> DRIVER_ASSIGNED : Driver accepts',
+      '  SEARCHING --> CANCELLED : Rider cancels or no drivers',
+      '  DRIVER_ASSIGNED --> EN_ROUTE : Auto after assignment',
+      '  DRIVER_ASSIGNED --> CANCELLED : Driver cancels',
+      '  EN_ROUTE --> DRIVER_ARRIVED : Driver taps Arrived',
+      '  EN_ROUTE --> CANCELLED : Driver cancels',
+      '  DRIVER_ARRIVED --> IN_PROGRESS : Driver taps Start Ride',
+      '  IN_PROGRESS --> COMPLETED : Driver taps End Ride',
+      '  IN_PROGRESS --> CANCELLED : Emergency or SOS',
+      '  COMPLETED --> [*] : Payment + rating window 24h',
+      '  CANCELLED --> [*] : Refund if payment taken'
+    ].join('\n')
+  },
+  {
+    id: 'erd', icon: '&#x1F5C4;',
+    title: 'Database ERD',
+    sub: 'All 10 PostgreSQL tables and relationships',
+    code: [
+      'erDiagram',
+      '  USERS { uuid id PK varchar phone UK varchar name varchar role decimal wallet_balance }',
+      '  DRIVERS { uuid id PK varchar kyc_status varchar status decimal rating int total_rides }',
+      '  VEHICLES { uuid id PK uuid driver_id FK varchar type varchar make varchar plate_no }',
+      '  RIDES { uuid id PK uuid rider_id FK uuid driver_id FK varchar status decimal fare_estimate decimal fare_final timestamptz requested_at }',
+      '  PAYMENTS { uuid id PK uuid ride_id FK decimal amount varchar method varchar idempotency_key UK }',
+      '  WALLET_TRANSACTIONS { uuid id PK uuid user_id FK varchar type decimal amount decimal balance_after }',
+      '  RATINGS { uuid id PK uuid ride_id FK uuid from_user_id FK smallint score }',
+      '  PROMO_CODES { uuid id PK varchar code UK varchar discount_type decimal discount_value }',
+      '  SAVED_ADDRESSES { uuid id PK uuid user_id FK varchar label decimal lat decimal lng }',
+      '  USERS ||--o{ RIDES : "rider_id"',
+      '  USERS ||--o{ RIDES : "driver_id"',
+      '  USERS ||--|| DRIVERS : "profile"',
+      '  DRIVERS ||--o{ VEHICLES : "owns"',
+      '  RIDES ||--o{ PAYMENTS : "charged via"',
+      '  USERS ||--o{ WALLET_TRANSACTIONS : "history"',
+      '  RIDES ||--o{ RATINGS : "rated after"',
+      '  USERS ||--o{ SAVED_ADDRESSES : "saved places"'
+    ].join('\n')
+  },
+  {
+    id: 'kafka', icon: '&#x1F4E8;',
+    title: 'Kafka Event Bus',
+    sub: 'Producers, topics, consumers and Redis pub/sub for real-time',
+    code: [
+      'graph TB',
+      '  RideSvc[Ride Service] -->|status changes| T1[ride.state_changed<br/>Kafka Topic]',
+      '  PaySvc[Payment Service] -->|charge events| T2[payment.processed<br/>Kafka Topic]',
+      '  T1 -->|at-least-once| NS[Notification Service<br/>Kafka consumer]',
+      '  T2 --> NS',
+      '  NS -->|push notifications| FCM[Firebase FCM]',
+      '  NS -->|email receipts| EMAIL[Resend Email]',
+      '  LocSvc[Location Service] -->|GPS pings| CH1[driver:id:location<br/>Redis PubSub]',
+      '  RideSvc -->|state changes| CH2[ride:state<br/>Redis PubSub]',
+      '  MatchSvc[Matching Service] -->|requests| CH3[ride:request<br/>Redis PubSub]',
+      '  CH1 --> WSHub[WebSocket Hub<br/>Fly.io]',
+      '  CH2 --> WSHub',
+      '  CH3 --> WSHub'
+    ].join('\n')
+  },
+  {
+    id: 'deployment', icon: '&#x2601;',
+    title: 'Deployment Architecture',
+    sub: 'Vercel + Railway + Fly.io + 4 managed data stores',
+    code: [
+      'graph TB',
+      '  Browser[Browser / Phone<br/>Installed PWA] --> CF[Cloudflare<br/>DNS + DDoS + SSL]',
+      '  CF --> V1[Rider PWA<br/>Vercel]',
+      '  CF --> V2[Driver PWA<br/>Vercel]',
+      '  CF --> V3[Admin Dashboard<br/>Vercel]',
+      '  V1 -->|REST| RW[Railway<br/>10 Microservices]',
+      '  V2 -->|REST| RW',
+      '  V3 -->|REST| RW',
+      '  V1 -->|WSS| FLY[Fly.io<br/>WebSocket Hub<br/>Always-on]',
+      '  V2 -->|WSS| FLY',
+      '  RW --> NEON[(Neon PostgreSQL)]',
+      '  RW --> UPRD[(Upstash Redis)]',
+      '  RW --> KAFKA[Upstash Kafka]',
+      '  RW --> ATLAS[(MongoDB Atlas M0)]',
+      '  FLY --> UPRD',
+      '  GH[GitHub Repo] --> GA[GitHub Actions CI/CD]',
+      '  GA --> REG[Container Registry<br/>ghcr.io]',
+      '  REG --> RW',
+      '  REG --> FLY',
+      '  UPT[UptimeRobot<br/>ping every 5min] -.->|keeps awake| RW'
+    ].join('\n')
+  },
+  {
+    id: 'racefix', icon: '&#x1F512;',
+    title: 'Race Condition Fix',
+    sub: 'Two riders, one driver — who gets assigned and why',
+    code: [
+      'sequenceDiagram',
+      '  actor RiderA as Rider A',
+      '  actor RiderB as Rider B',
+      '  actor Driver as Driver X',
+      '  participant MatchSvc as Matching Service',
+      '  participant Redis',
+      '  participant RideSvc as Ride Service',
+      '  participant WPWA as Driver PWA',
+      '  RiderA->>RideSvc: POST /rides rideA',
+      '  RiderB->>RideSvc: POST /rides rideB',
+      '  RideSvc->>MatchSvc: match rideA async',
+      '  RideSvc->>MatchSvc: match rideB async',
+      '  MatchSvc->>Redis: GEORADIUS 3km for rideA',
+      '  Redis-->>MatchSvc: Driver X online',
+      '  MatchSvc->>Redis: GEORADIUS 3km for rideB',
+      '  Redis-->>MatchSvc: Driver X online',
+      '  MatchSvc->>Redis: PUBLISH ride:request rideA to Driver X',
+      '  MatchSvc->>Redis: PUBLISH ride:request rideB to Driver X',
+      '  Redis->>WPWA: ride_request rideA modal',
+      '  Redis->>WPWA: ride_request rideB modal',
+      '  Driver->>RideSvc: POST /rides/rideA/accept first tap',
+      '  Note over RideSvc,Redis: ATOMIC claimDriver pipeline',
+      '  RideSvc->>Redis: SETNX ride:rideA:lock',
+      '  RideSvc->>Redis: PIPELINE HSET driver:X on_ride + ZREM geo index',
+      '  RideSvc->>Redis: PUBLISH ride:request_cancelled driverX',
+      '  Redis->>WPWA: ride_request_cancelled - rideB modal closes',
+      '  RideSvc->>RideSvc: UPDATE rides rideA driver_assigned',
+      '  RideSvc->>Redis: PUBLISH ride:state rideA driver_assigned',
+      '  Redis->>RiderA: ride_state driver found',
+      '  Note over RiderB: rideB still searching',
+      '  MatchSvc->>Redis: GEORADIUS retry for rideB',
+      '  Redis-->>MatchSvc: Driver X NOT found - removed from geo index',
+      '  MatchSvc->>MatchSvc: No drivers - expand radius or fail',
+      '  RiderB->>RiderB: No drivers available'
+    ].join('\n')
+  }
+]
+
+// ── State ────────────────────────────────────────────────────────────────────
+let activePz = null
+let activeId = null
+const done = new Set()
+
+// ── Build nav + panels ───────────────────────────────────────────────────────
+const nav = document.getElementById('nav')
+const cv  = document.getElementById('cv')
+
+D.forEach((d, i) => {
+  const el = document.createElement('div')
+  el.className = 'ni'
+  el.dataset.id = d.id
+  el.innerHTML = `<span class="ic">${d.icon}</span><span>${d.title}</span><span class="nm">${i+1}</span>`
+  el.onclick = () => show(d.id)
+  nav.appendChild(el)
+
+  const p = document.createElement('div')
+  p.className = 'panel'
+  p.id = 'p-' + d.id
+  cv.appendChild(p)
+})
+
+// ── Render using mermaid.render() — string API, no DOM dependency ─────────────
+async function render(id) {
+  if (done.has(id)) return
+  done.add(id)
+
+  const d = D.find(x => x.id === id)
+  const panel = document.getElementById('p-' + id)
+
+  const wrap = document.createElement('div')
+  wrap.className = 'pz'
+  wrap.id = 'pz-' + id
+
+  try {
+    const uid = 'mg-' + id + '-' + Date.now()
+    const result = await Promise.race([
+      mermaid.render(uid, d.code),
+      new Promise((_, rej) => setTimeout(() => rej(new Error('Timeout after 10s')), 10000))
+    ])
+    wrap.innerHTML = result.svg ?? result
+  } catch (e) {
+    wrap.innerHTML = `<div style="color:#ff6b35;padding:24px;font-family:monospace;font-size:13px;max-width:600px">
+      <b>Error rendering: ${d.title}</b><br/><br/>${String(e.message || e).slice(0, 400)}</div>`
+  }
+
+  // Keep SVG natural dimensions — removing them collapses it to 0
+  const svg = wrap.querySelector('svg')
+  if (svg) {
+    svg.style.display = 'block'
+  }
+
+  panel.appendChild(wrap)
+}
+
+// ── Show diagram ─────────────────────────────────────────────────────────────
+async function show(id) {
+  if (activePz) { try { activePz.destroy() } catch {} activePz = null }
+
+  document.querySelectorAll('.panel.on').forEach(p => p.classList.remove('on'))
+  document.querySelectorAll('.ni.on').forEach(n => n.classList.remove('on'))
+
+  await render(id)
+
+  document.getElementById('p-' + id)?.classList.add('on')
+  const ni = document.querySelector(`.ni[data-id="${id}"]`)
+  if (ni) { ni.classList.add('on'); ni.scrollIntoView({ block: 'nearest' }) }
+
+  const d = D.find(x => x.id === id)
+  document.getElementById('dt').textContent = d?.title ?? id
+  document.getElementById('ds').textContent = d?.sub ?? ''
+  activeId = id
+
+  const wrap = document.getElementById('pz-' + id)
+  if (wrap) {
+    activePz = Panzoom(wrap, { maxScale: 10, minScale: 0.1, step: 0.1, startScale: 1 })
+    // Wheel zoom on the whole canvas area
+    document.getElementById('cw').onwheel = e => {
+      if (!activePz) return
+      e.preventDefault()
+      activePz.zoomWithWheel(e)
+      zl()
+    }
+    wrap.addEventListener('panzoomchange', zl)
+    zl()
+  }
+}
+
+function zl() {
+  if (activePz) document.getElementById('zl').textContent = Math.round(activePz.getScale() * 100) + '%'
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+async function init() {
+  document.getElementById('ll').textContent = D[0].title
+  await show(D[0].id)
+  document.getElementById('ld').style.display = 'none'
+  setTimeout(async () => { for (const d of D.slice(1)) await render(d.id) }, 500)
+}
+
+// ── Controls ─────────────────────────────────────────────────────────────────
+document.getElementById('bzp').onclick = () => { activePz?.zoomIn(); zl() }
+document.getElementById('bzm').onclick = () => { activePz?.zoomOut(); zl() }
+document.getElementById('brs').onclick = () => {
+  if (!activePz) return
+  activePz.reset({ animate: true })
+  activePz.pan(0, 0, { animate: true })
+  setTimeout(zl, 350)
+}
+document.getElementById('bex').onclick = () => {
+  if (!activeId) return
+  const svg = document.querySelector('#pz-' + activeId + ' svg')
+  if (!svg) return
+  const c = svg.cloneNode(true)
+  c.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([c.outerHTML], { type: 'image/svg+xml' }))
+  a.download = 'rideapp-' + activeId + '.svg'
+  a.click()
+}
+document.addEventListener('keydown', e => {
+  const i = D.findIndex(d => d.id === activeId)
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { if (i < D.length-1) show(D[i+1].id) }
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { if (i > 0) show(D[i-1].id) }
+  if (e.key === 'r' || e.key === 'R') { activePz?.reset({ animate:true }); setTimeout(zl, 350) }
+})
+
+init()
+</script>
+</body>
+</html>
