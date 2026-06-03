@@ -17,7 +17,7 @@
 8. [WebSocket Architecture](#8-websocket-architecture)
 9. [Ride State Machine](#9-ride-state-machine)
 10. [Database ERD](#10-database-erd)
-11. [Kafka Event Bus](#11-kafka-event-bus)
+11. [Redis Streams Event Bus](#11-redis-streams-event-bus)
 12. [Deployment Architecture](#12-deployment-architecture)
 13. [Request Lifecycle — How a Booking Actually Flows Through Code](#13-request-lifecycle)
 
@@ -47,7 +47,7 @@ flowchart TB
         SVC[10 Microservices]
         DB[(PostgreSQL\nNeon)]
         RD[(Redis\nUpstash)]
-        MQ[Kafka\nUpstash]
+        MQ[Redis Streams\nUpstash]
         MDB[(MongoDB\nAtlas)]
     end
 
@@ -134,7 +134,7 @@ flowchart LR
         PA2[GET /payments/ride/:id]
     end
 
-    subgraph Notification["Notification Service :3109\nKafka Consumer"]
+    subgraph Notification["Notification Service :3109\nRedis Streams Consumer"]
         N1[ride.state_changed consumer]
         N2[payment.processed consumer]
     end
@@ -153,7 +153,7 @@ flowchart LR
     %% Data store ownership
     PG[(PostgreSQL)]
     REDIS[(Redis)]
-    KAFKA([Kafka])
+    KAFKA([Redis Streams])
 
     Auth -->|refresh tokens| REDIS
     User --> PG
@@ -246,7 +246,7 @@ sequenceDiagram
     participant LocSvc as Location Service
     participant Redis
     participant WS as WebSocket Hub
-    participant Kafka
+    participant Streams as Redis Streams
     participant PaySvc as Payment Service
     participant NotifSvc as Notification Service
 
@@ -262,7 +262,7 @@ sequenceDiagram
     RideSvc->>PricingSvc: GET /pricing/estimate (confirm fare)
     PricingSvc-->>RideSvc: fare confirmed
     RideSvc->>RideSvc: INSERT INTO rides (status=searching)
-    RideSvc->>Kafka: PUBLISH ride.state_changed {rideId, status:searching}
+    RideSvc->>Streams: XADD ride.state_changed {rideId, status:searching}
     RideSvc-->>RiderPWA: {rideId, status:searching}
 
     Note over RiderPWA,WS: Rider joins WebSocket room
@@ -305,8 +305,8 @@ sequenceDiagram
     RideSvc->>Redis: PUBLISH ride:request_cancelled {driverId3, rideId}
     Note over DriverPWA: Other drivers' modals close
 
-    RideSvc->>Kafka: PUBLISH ride.state_changed {status:driver_assigned}
-    Kafka->>NotifSvc: consume event
+    RideSvc->>Streams: XADD ride.state_changed {status:driver_assigned}
+    Streams->>NotifSvc: XREADGROUP delivers event
     NotifSvc->>NotifSvc: getFCMToken(riderId)
     NotifSvc->>NotifSvc: FCM.send("Driver Found!", "Your driver is on the way")
 ```
@@ -410,7 +410,7 @@ sequenceDiagram
     participant PaySvc as Payment Service
     participant DB as PostgreSQL
     participant Razorpay
-    participant Kafka
+    participant Streams as Redis Streams
     participant NotifSvc as Notification Service
     participant RatingSvc as Rating Service
     actor Rider
@@ -445,10 +445,10 @@ sequenceDiagram
         Note over PaySvc: Credit driver 80% of fare
         PaySvc->>DB: BEGIN\nUPDATE users SET wallet_balance += amount*0.8\nWHERE id=driverId\nINSERT INTO wallet_transactions\nCOMMIT
 
-        PaySvc->>Kafka: PUBLISH payment.processed\n{rideId, riderId, driverId, amount, method}
+        PaySvc->>Streams: XADD payment.processed\n{rideId, riderId, driverId, amount, method}
     end
 
-    Kafka->>NotifSvc: consume payment.processed
+    Streams->>NotifSvc: XREADGROUP delivers event
     NotifSvc->>NotifSvc: getFCMToken(riderId)
     NotifSvc->>NotifSvc: FCM.send("Payment Confirmed", "₹{amount} paid")
 
@@ -570,7 +570,7 @@ stateDiagram-v2
         On completion:
         → Payment Service charges rider
         → Driver gets 80% credited to wallet
-        → Kafka event triggers FCM push
+        → Redis Stream event triggers FCM push
         → Rating window opens
     end note
 ```
@@ -719,24 +719,25 @@ erDiagram
 
 ---
 
-## 11. Kafka Event Bus
+## 11. Redis Streams Event Bus
 
-Which services produce events and which consume them. This is the nervous system of the platform.
+Upstash Kafka was deprecated and replaced with **Redis Streams** (same Upstash Redis instance, zero extra service).  
+Streams provide at-least-once delivery with consumer groups and ACK semantics — same guarantees as Kafka for this use case.
 
 ```mermaid
 flowchart LR
-    subgraph Producers
+    subgraph Producers["Producers — XADD"]
         RS[Ride Service]
         PS[Payment Service]
     end
 
-    subgraph Topics["Kafka Topics\nUpstash — 10K msg/day free"]
-        T1[ride.state_changed\n12 partitions]
-        T2[payment.processed\n6 partitions]
+    subgraph Streams["Redis Streams — Upstash Redis"]
+        T1[ride.state_changed\nstream]
+        T2[payment.processed\nstream]
     end
 
-    subgraph Consumers
-        NS[Notification Service\nGroupId: notification-service]
+    subgraph Consumers["Consumer — XREADGROUP"]
+        NS[Notification Service\ngroupId: notification-service\nACK after success]
     end
 
     subgraph Actions["What Notification Service does"]
@@ -744,37 +745,33 @@ flowchart LR
         EMAIL[Resend Email Receipt]
     end
 
-    RS -->|status: searching| T1
-    RS -->|status: driver_assigned| T1
-    RS -->|status: driver_arrived| T1
-    RS -->|status: in_progress| T1
-    RS -->|status: completed| T1
-    RS -->|status: cancelled| T1
+    RS -->|XADD status changes| T1
+    PS -->|XADD charge events| T2
 
-    PS -->|amount, method, rideId| T2
-
-    T1 -->|at-least-once delivery| NS
+    T1 -->|XREADGROUP at-least-once| NS
     T2 --> NS
 
-    NS -->|ride_assigned → rider push| FCM
-    NS -->|driver_arrived → rider push| FCM
-    NS -->|ride_completed → rider push| FCM
+    NS -->|driver_assigned → push| FCM
+    NS -->|driver_arrived → push| FCM
+    NS -->|completed → push| FCM
     NS -->|payment_confirmed → receipt| EMAIL
 
-    subgraph RedisPS["Redis Pub/Sub — Real-time only\nNO message limit"]
+    subgraph RedisPS["Redis Pub/Sub — real-time — no message limit"]
         CH1[driver:id:location]
         CH2[ride:state]
         CH3[ride:request]
         CH4[ride:request_cancelled]
     end
 
-    RS2[Ride Service] -->|state changes| CH2
-    MS[Matching Service] -->|new request| CH3
-    MS -->|cancellations| CH4
-    LS[Location Service] -->|GPS pings| CH1
+    RS2[Ride Service] -->|PUBLISH state changes| CH2
+    MS[Matching Service] -->|PUBLISH requests| CH3
+    MS -->|PUBLISH cancellations| CH4
+    LS[Location Service] -->|PUBLISH GPS pings| CH1
 
-    WS[WebSocket Hub] -->|subscribes PSUBSCRIBE| CH1
-    WS -->|subscribes| CH2 & CH3 & CH4
+    WS[WebSocket Hub] -->|PSUBSCRIBE all channels| CH1
+    WS -->|SUBSCRIBE| CH2
+    WS -->|SUBSCRIBE| CH3
+    WS -->|SUBSCRIBE| CH4
 ```
 
 ---

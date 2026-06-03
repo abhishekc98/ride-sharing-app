@@ -237,7 +237,7 @@ export async function rideRoutes(app: FastifyInstance) {
 
 async function triggerMatching(ride: any) {
   try {
-    await axios.post(`${process.env.MATCHING_SERVICE_URL ?? 'http://localhost:3106'}/api/v1/match`, {
+    await axios.post(`${process.env.MATCHING_SERVICE_URL ?? 'http://localhost:3000'}/api/v1/match`, {
       rideId: ride.id,
       riderId: ride.rider_id,
       pickupLat: ride.pickup_lat,
@@ -254,7 +254,7 @@ async function triggerMatching(ride: any) {
 
 async function completeRide(ride: any, driverId: string) {
   try {
-    await axios.post(`${process.env.PAYMENT_SERVICE_URL ?? 'http://localhost:3108'}/api/v1/payments/charge`, {
+    await axios.post(`${process.env.PAYMENT_SERVICE_URL ?? 'http://localhost:3000'}/api/v1/payments/charge`, {
       rideId: ride.id, riderId: ride.rider_id, driverId,
       amount: ride.fare_final ?? ride.fare_estimate,
     })

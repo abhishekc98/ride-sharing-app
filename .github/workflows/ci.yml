@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Type check
+      - name: Build shared packages
         run: pnpm --filter "@ride/shared-types" build
 
   build-apps:
@@ -49,30 +49,27 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build ${{ matrix.app }}
-        run: pnpm --filter "@ride/${{ matrix.app == 'web' && 'web' || matrix.app == 'driver-web' && 'driver-web' || 'admin' }}" build
+        run: pnpm --filter "@ride/${{ matrix.app }}" build
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
           NEXT_PUBLIC_FIREBASE_API_KEY: placeholder
           NEXT_PUBLIC_DEV_BYPASS_OTP: 'true'
 
-  build-services:
+  # Render deployments (3 services):
+  #   services/api/          → merged Node.js API (all 9 services)
+  #   services/websocket-hub/ → Socket.io hub
+  #   services/pricing-service/ → Python FastAPI
+  # Render auto-deploys from GitHub on push to main — no Docker push step needed here.
+  # To trigger a manual deploy: push to main or use Render dashboard.
+
+  build-api-docker:
     runs-on: ubuntu-latest
     needs: lint-and-typecheck
     if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
     strategy:
       matrix:
-        service:
-          - auth-service
-          - user-service
-          - driver-service
-          - location-service
-          - ride-service
-          - matching-service
-          - payment-service
-          - notification-service
-          - rating-service
-          - websocket-hub
+        service: [api, websocket-hub]
     steps:
       - uses: actions/checkout@v4
 
