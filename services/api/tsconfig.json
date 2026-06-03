@@ -1,0 +1,22 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "outDir": "dist",
+    "rootDir": "..",
+    "paths": {}
+  },
+  "include": [
+    "src/**/*",
+    "../auth-service/src/**/*",
+    "../user-service/src/**/*",
+    "../driver-service/src/**/*",
+    "../location-service/src/**/*",
+    "../ride-service/src/**/*",
+    "../matching-service/src/**/*",
+    "../payment-service/src/**/*",
+    "../notification-service/src/**/*",
+    "../rating-service/src/**/*"
+  ]
+}
