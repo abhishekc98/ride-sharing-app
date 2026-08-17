@@ -4,7 +4,7 @@ import { getSocket } from '@/lib/socket'
 import { useRideStore } from '@/stores/rideStore'
 
 export function useSocket() {
-  const { setStatus, setDriver, setDriverLocation, rideId } = useRideStore()
+  const { setStatus, setDriver, setDriverLocation, rideId, driver } = useRideStore()
   const socketRef = useRef(getSocket())
 
   useEffect(() => {
@@ -46,6 +46,17 @@ export function useSocket() {
       if (rideId) socket.emit('leave_ride', { rideId })
     }
   }, [rideId])
+
+  // The driver's live location only reaches driver_tracking:{driverId} —
+  // has to be explicitly joined once we know who's assigned, same as the
+  // ride room above, or driver_location events have nowhere to land.
+  useEffect(() => {
+    const socket = socketRef.current
+    if (driver?.id) socket.emit('track_driver', { driverId: driver.id })
+    return () => {
+      if (driver?.id) socket.emit('untrack_driver', { driverId: driver.id })
+    }
+  }, [driver?.id])
 
   return socketRef.current
 }

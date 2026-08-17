@@ -7,17 +7,37 @@ export default function EarningsPage() {
   const router = useRouter()
   const [earnings, setEarnings] = useState<any>(null)
   const [rides, setRides] = useState<any[]>([])
+  const [walletBalance, setWalletBalance] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [message, setMessage] = useState('')
 
-  useEffect(() => {
+  const load = () =>
     Promise.all([
       api.get('/api/v1/drivers/me/earnings'),
       api.get('/api/v1/drivers/me/rides?limit=10'),
-    ]).then(([e, r]) => {
+      api.get('/api/v1/drivers/me'),
+    ]).then(([e, r, d]) => {
       setEarnings(e.data.data)
       setRides(r.data.data)
+      setWalletBalance(Number(d.data.data.wallet_balance ?? 0))
     }).finally(() => setLoading(false))
-  }, [])
+
+  useEffect(() => { load() }, [])
+
+  const withdraw = async () => {
+    setWithdrawing(true)
+    setMessage('')
+    try {
+      const res = await api.post('/api/v1/payments/payout/withdraw', {})
+      setMessage(`Withdrawal of ₹${Number(res.data.data.amount).toFixed(0)} requested — settles to your bank shortly`)
+      await load()
+    } catch (err: any) {
+      setMessage(err.response?.data?.error ?? 'Could not start withdrawal')
+    } finally {
+      setWithdrawing(false)
+    }
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -32,6 +52,22 @@ export default function EarningsPage() {
         </div>
       ) : (
         <div className="p-4">
+          {/* Withdrawable balance */}
+          <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-2xl p-5 mb-4">
+            <p className="text-green-100 text-xs font-bold uppercase tracking-wide mb-1">Available to withdraw</p>
+            <p className="text-3xl font-bold mb-1">₹{walletBalance.toFixed(0)}</p>
+            {Number(earnings?.pendingPayout ?? 0) > 0 && (
+              <p className="text-green-100 text-xs font-medium mb-3">₹{Number(earnings.pendingPayout).toFixed(0)} pending settlement</p>
+            )}
+            <button
+              onClick={withdraw}
+              disabled={withdrawing || walletBalance <= 0}
+              className="w-full bg-white text-green-700 rounded-xl py-3 font-bold text-sm mt-2 disabled:opacity-50">
+              {withdrawing ? 'Requesting…' : 'Withdraw to bank'}
+            </button>
+            {message && <p className="text-green-50 text-xs font-medium mt-2">{message}</p>}
+          </div>
+
           <div className="grid grid-cols-2 gap-3 mb-6">
             {[
               { label: 'Today', value: earnings?.today ?? 0 },

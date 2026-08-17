@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import jwt from 'jsonwebtoken'
 import pkg from 'pg'
+import { setDriverRating } from '../lib/redis.js'
 const { Pool } = pkg
 
 let pool: pkg.Pool | null = null
@@ -56,12 +57,13 @@ export async function ratingRoutes(app: FastifyInstance) {
     )
 
     if (role === 'rider') {
-      await db.query(
+      const { rows: [{ rating }] } = await db.query(
         `UPDATE drivers SET rating = (
           SELECT ROUND(AVG(score)::numeric, 2) FROM ratings WHERE to_user_id = $1 AND role = 'rider'
-        ) WHERE id = $1`,
+        ) WHERE id = $1 RETURNING rating`,
         [body.toUserId]
       )
+      await setDriverRating(body.toUserId, Number(rating))
     }
 
     return reply.code(201).send({ data: rating })

@@ -1,4 +1,4 @@
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 let client: Redis | null = null
 export const getRedis = () => {
   if (!client) client = new Redis(process.env.REDIS_URL ?? 'redis://localhost:6379', { maxRetriesPerRequest: 3 })
@@ -35,6 +35,12 @@ export async function releaseDriver(driverId: string, lat: number, lng: number, 
     .exec()
 }
 
+// Keep the matching-score formula's acceptance_rate term fed with live data —
+// otherwise it always reads the Redis hash's fallback default.
+export async function setDriverAcceptanceRate(driverId: string, rate: number) {
+  await getRedis().hset(`driver:${driverId}:state`, 'acceptance_rate', rate.toString())
+}
+
 export async function publishRideState(data: object) {
   await getRedis().publish('ride:state', JSON.stringify(data))
 }
@@ -43,4 +49,15 @@ export async function publishRideRequest(driverId: string, data: object) {
 }
 export async function publishRideRequestCancelled(driverId: string, rideId: string) {
   await getRedis().publish('ride:request_cancelled', JSON.stringify({ driverId, rideId }))
+}
+
+// matching-service records which driver IDs a ride's request was fanned out to
+// (ride:{id}:candidates). Pop it on accept so the losers can be told to stop
+// waiting instead of relying on their 30s client-side timeout.
+export async function popRideCandidates(rideId: string): Promise<string[]> {
+  const redis = getRedis()
+  const key = `ride:${rideId}:candidates`
+  const ids = await redis.smembers(key)
+  if (ids.length) await redis.del(key)
+  return ids
 }

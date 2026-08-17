@@ -16,7 +16,7 @@ import { upsertUser } from '../lib/db.js'
 
 const verifySchema = z.object({
   firebaseToken: z.string().min(1),
-  role: z.enum(['rider', 'driver']),
+  role: z.enum(['rider', 'driver', 'admin']),
 })
 
 const refreshSchema = z.object({

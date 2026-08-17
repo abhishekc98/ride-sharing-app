@@ -8,6 +8,7 @@ import {
   getNearbyDrivers,
   getDriverState,
 } from '../lib/redis.js'
+import { getDb } from '../lib/db.js'
 
 const pingSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -68,6 +69,15 @@ export async function locationRoutes(app: FastifyInstance) {
   app.post('/location/online', { preHandler: requireDriver }, async (req, reply) => {
     const user = (req as any).user
     const body = pingSchema.parse(req.body)
+
+    const { rows: [driver] } = await getDb().query('SELECT kyc_status FROM drivers WHERE id = $1', [user.sub])
+    if (driver?.kyc_status !== 'approved')
+      return reply.code(403).send({
+        error: 'Complete KYC verification before going online',
+        code: 'KYC_NOT_APPROVED',
+        kycStatus: driver?.kyc_status ?? 'pending',
+      })
+
     await setDriverOnline(user.sub, body.lat, body.lng, body.city)
     return { data: { status: 'online' } }
   })

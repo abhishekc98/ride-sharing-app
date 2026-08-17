@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { getSocket } from '@/lib/socket'
 import { useDriverStore } from '@/stores/driverStore'
 
 export function useDriverSocket() {
   const { setPendingRequest, setRideStatus, setCurrentRide } = useDriverStore()
   const socketRef = useRef(getSocket())
+  const router = useRouter()
 
   useEffect(() => {
     const socket = socketRef.current
@@ -21,7 +23,11 @@ export function useDriverSocket() {
 
     socket.on('ride_state', (data) => {
       setRideStatus(data.status)
-      if (data.status === 'completed' || data.status === 'cancelled') {
+      if (data.status === 'completed') {
+        const rideId = data.rideId ?? useDriverStore.getState().currentRide?.id
+        setCurrentRide(null)
+        if (rideId) router.push(`/ride/${rideId}/complete`)
+      } else if (data.status === 'cancelled') {
         setCurrentRide(null)
       }
     })
@@ -31,7 +37,7 @@ export function useDriverSocket() {
       socket.off('ride_request_cancelled')
       socket.off('ride_state')
     }
-  }, [setPendingRequest, setRideStatus, setCurrentRide])
+  }, [setPendingRequest, setRideStatus, setCurrentRide, router])
 
   return socketRef.current
 }

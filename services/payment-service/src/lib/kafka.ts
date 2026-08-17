@@ -1,6 +1,6 @@
 // Replaced Kafka with Redis Streams via Upstash Redis.
 // API is identical — callers use publishEvent() unchanged.
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 
 let client: Redis | null = null
 

@@ -13,3 +13,8 @@ coverage
 __pycache__
 *.pyc
 .venv
+venv
+.browser-screenshots
+*.logs-*
+*.log
+.html

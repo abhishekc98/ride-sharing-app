@@ -28,6 +28,7 @@ const PORT = Number(process.env.PORT ?? 3000)
 // so we point those calls back to localhost:PORT — no network hop.
 process.env.MATCHING_SERVICE_URL = `http://localhost:${PORT}`
 process.env.PAYMENT_SERVICE_URL  = `http://localhost:${PORT}`
+process.env.RIDE_SERVICE_URL     = `http://localhost:${PORT}`
 // PRICING_SERVICE_URL stays pointing to the separate Python service on Render
 
 // ── Server ───────────────────────────────────────────────────────────────────

@@ -52,14 +52,19 @@ async def get_estimate(
     dropLat: float = Query(...),
     dropLng: float = Query(...),
     vehicleType: str = Query(...),
+    actualDurationMinutes: float | None = Query(None),
+    surgeMultiplier: float | None = Query(None),
 ):
     if vehicleType not in PRICING:
         raise HTTPException(400, "Invalid vehicle type")
 
     distance_km = haversine(pickupLat, pickupLng, dropLat, dropLng)
-    duration_min = estimate_duration_minutes(distance_km)
+    # At ride completion, callers pass the trip's real elapsed time instead of
+    # the pre-ride guess, and the surge that was locked in at booking (so a
+    # surge window closing mid-ride can't retroactively change the fare).
+    duration_min = actualDurationMinutes if actualDurationMinutes is not None else estimate_duration_minutes(distance_km)
     config = PRICING[vehicleType]
-    surge, surge_zone = get_surge_multiplier(pickupLat, pickupLng)
+    surge, surge_zone = (surgeMultiplier, None) if surgeMultiplier is not None else get_surge_multiplier(pickupLat, pickupLng)
 
     base = config["base"]
     dist_charge = config["per_km"] * distance_km
@@ -92,15 +97,31 @@ async def set_surge(zone_id: str, multiplier: float):
     redis_client.setex(f"surge:{zone_id}", 120, str(multiplier))
     return {"data": {"zone_id": zone_id, "multiplier": multiplier}}
 
+PROMO_CODES = {
+    "FIRST50": {"discountType": "percent", "discountValue": 50, "maxDiscount": 100, "minRideAmount": 0},
+    "FLAT30": {"discountType": "flat", "discountValue": 30, "maxDiscount": None, "minRideAmount": 100},
+}
+
 @app.post("/api/v1/pricing/promo/validate")
 async def validate_promo(body: dict):
-    """Validate promo code — stub (DB query in production)"""
+    """Validate promo code and compute the discount for a given fare — stub (DB query in production)"""
     code = body.get("code", "").upper()
-    if code == "FIRST50":
-        return {"data": {"valid": True, "discountType": "percent", "discountValue": 50, "maxDiscount": 100}}
-    if code == "FLAT30":
-        return {"data": {"valid": True, "discountType": "flat", "discountValue": 30}}
-    return {"data": {"valid": False, "reason": "Invalid or expired promo code"}}
+    fare = float(body.get("fareAmount", 0))
+    promo = PROMO_CODES.get(code)
+    if not promo:
+        return {"data": {"valid": False, "reason": "Invalid or expired promo code"}}
+    if fare < promo["minRideAmount"]:
+        return {"data": {"valid": False, "reason": f"Minimum fare of Rs.{promo['minRideAmount']} required"}}
+
+    if promo["discountType"] == "percent":
+        discount = fare * (promo["discountValue"] / 100)
+        if promo["maxDiscount"] is not None:
+            discount = min(discount, promo["maxDiscount"])
+    else:
+        discount = promo["discountValue"]
+    discount = round(min(discount, fare), 2)
+
+    return {"data": {"valid": True, "discountType": promo["discountType"], "discountValue": promo["discountValue"], "discount": discount}}
 
 @app.get("/api/v1/pricing/health")
 async def health():

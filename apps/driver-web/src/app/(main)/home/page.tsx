@@ -5,29 +5,60 @@ import dynamic from 'next/dynamic'
 import { api } from '@/lib/api'
 import { useDriverStore } from '@/stores/driverStore'
 import { useDriverSocket } from '@/hooks/useDriverSocket'
-import { useGPSPing } from '@/hooks/useGPSPing'
+import { useGPSPing, SIMULATE_GPS, SIM_DEFAULT_SEED } from '@/hooks/useGPSPing'
 import { RideRequestModal } from '@/components/ride/RideRequestModal'
 
 const DriverMap = dynamic(() => import('@/components/map/DriverMap'), { ssr: false })
 
 export default function DriverHomePage() {
   const router = useRouter()
-  const { user, isOnline, setOnline, currentRide, setRideStatus } = useDriverStore()
+  const { user, _hasHydrated, isOnline, setOnline, currentRide, setRideStatus } = useDriverStore()
   const [earnings, setEarnings] = useState<any>(null)
   const [pos, setPos] = useState<{ lat: number; lng: number } | null>(null)
 
   useDriverSocket()
-  useGPSPing()
+  // useGPSPing owns position AND the route to the current leg together (see
+  // its own comments) — that's what keeps the drawn line and the moving
+  // marker in sync, and what makes the simulator walk actual roads instead
+  // of a straight line through buildings.
+  const { position: livePosition, route } = useGPSPing()
+  // useGPSPing only tracks while online (no point pinging otherwise) — pos
+  // is the idle/pre-online seed so the map and "Go Online" have something to
+  // work with before that; livePosition takes over the instant it's online.
+  const displayPos = livePosition ?? pos
+
+  const [kycReady, setKycReady] = useState(false)
 
   useEffect(() => {
-    if (!user) router.replace('/login')
-  }, [user])
+    if (!_hasHydrated) return
+    if (!user) { router.replace('/login'); return }
+    api.get('/api/v1/drivers/me')
+      .then((r) => {
+        if (r.data.data.kyc_status === 'approved') setKycReady(true)
+        else router.replace('/onboarding')
+      })
+      .catch(() => router.replace('/onboarding'))
+  }, [user, _hasHydrated])
 
+  // These two must stay above the `!_hasHydrated` early return below — every
+  // hook in a component has to run on every render regardless of any
+  // conditional return in between, or React loses track of hook order across
+  // the first render (before hydration) vs. later ones (after), which is
+  // exactly what was throwing "Rendered more hooks than during the previous
+  // render" and breaking the GPS simulator along with it.
   useEffect(() => {
+    // Simulated GPS ignores real position entirely (see useGPSPing) — seeding
+    // "Go Online" from the browser's real location here would put the driver
+    // wherever the laptop actually is, outside matching radius of whatever
+    // pickup gets picked in the rider app during local testing.
+    if (SIMULATE_GPS) {
+      setPos(SIM_DEFAULT_SEED)
+      return
+    }
     if (!navigator.geolocation) return
     navigator.geolocation.getCurrentPosition(
       (p) => setPos({ lat: p.coords.latitude, lng: p.coords.longitude }),
-      () => setPos({ lat: 12.9716, lng: 77.5946 })
+      () => setPos(SIM_DEFAULT_SEED)
     )
   }, [])
 
@@ -35,14 +66,22 @@ export default function DriverHomePage() {
     api.get('/api/v1/drivers/me/earnings').then((r) => setEarnings(r.data.data)).catch(() => {})
   }, [])
 
+  if (!_hasHydrated || !kycReady) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-gray-900">
+        <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
   const toggleOnline = async () => {
-    if (!pos) return alert('Waiting for GPS...')
+    if (!displayPos) return alert('Waiting for GPS...')
     try {
       if (isOnline) {
         await api.post('/api/v1/location/offline')
         setOnline(false)
       } else {
-        await api.post('/api/v1/location/online', { lat: pos.lat, lng: pos.lng })
+        await api.post('/api/v1/location/online', { lat: displayPos.lat, lng: displayPos.lng })
         setOnline(true)
       }
     } catch (err: any) {
@@ -66,9 +105,12 @@ export default function DriverHomePage() {
   return (
     <div className="relative h-screen w-full overflow-hidden bg-gray-100">
       <DriverMap
-        center={pos ? [pos.lat, pos.lng] : undefined}
-        driverPos={pos ? [pos.lat, pos.lng] : undefined}
-        className="absolute inset-0 h-full w-full"
+        center={displayPos ? [displayPos.lat, displayPos.lng] : undefined}
+        driverPos={displayPos ? [displayPos.lat, displayPos.lng] : undefined}
+        pickupPos={currentRide?.pickupLat != null ? [currentRide.pickupLat, currentRide.pickupLng!] : undefined}
+        dropPos={currentRide?.dropLat != null ? [currentRide.dropLat, currentRide.dropLng!] : undefined}
+        route={route ?? undefined}
+        className="absolute inset-0 h-full w-full z-0"
       />
 
       {/* Header */}

@@ -30,6 +30,7 @@ interface RideState {
   pickup: { address: string; lat: number; lng: number } | null
   drop: { address: string; lat: number; lng: number } | null
   vehicleType: 'bike' | 'auto' | 'cab'
+  paymentPreference: 'wallet' | 'card' | 'cash'
   setRide: (rideId: string, status: RideStatus) => void
   setStatus: (status: RideStatus) => void
   setDriver: (driver: DriverInfo) => void
@@ -38,6 +39,7 @@ interface RideState {
   setDrop: (drop: RideState['drop']) => void
   setFareEstimate: (fare: number) => void
   setVehicleType: (type: RideState['vehicleType']) => void
+  setPaymentPreference: (pref: RideState['paymentPreference']) => void
   reset: () => void
 }
 
@@ -49,6 +51,7 @@ export const useRideStore = create<RideState>((set) => ({
   pickup: null,
   drop: null,
   vehicleType: 'bike',
+  paymentPreference: 'wallet',
   setRide: (rideId, status) => set({ rideId, status }),
   setStatus: (status) => set({ status }),
   setDriver: (driver) => set({ driver }),
@@ -58,6 +61,11 @@ export const useRideStore = create<RideState>((set) => ({
   setDrop: (drop) => set({ drop }),
   setFareEstimate: (fare) => set({ fareEstimate: fare }),
   setVehicleType: (vehicleType) => set({ vehicleType }),
+  setPaymentPreference: (paymentPreference) => set({ paymentPreference }),
+  // pickup/drop are deliberately cleared too — leaving them set meant
+  // cancelling a ride dropped straight back into RideConfirmBar with the
+  // exact same stale trip and a live "Book Ride" button sitting right where
+  // "Cancel Ride" had just been, one tap away from silently re-booking it.
   reset: () =>
-    set({ rideId: null, status: 'idle', fareEstimate: null, driver: null }),
+    set({ rideId: null, status: 'idle', fareEstimate: null, driver: null, pickup: null, drop: null }),
 }))

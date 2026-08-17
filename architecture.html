@@ -139,8 +139,7 @@ const D = [
       '  SVC -->|payments| RP[Razorpay]',
       '  RW -->|map + routing| OSM[OpenStreetMap<br/>+ OSRM]',
       '  DW -->|map + routing| OSM',
-      '  SVC -->|KYC docs| CL[Cloudinary]',
-      '  SVC -->|receipts| RS[Resend Email]'
+      '  SVC -->|KYC docs| CL[Cloudinary]'
     ].join('\n')
   },
   {
@@ -151,13 +150,13 @@ const D = [
       'graph TB',
       '  AuthSvc[Auth Service :3101<br/>verify-firebase, refresh, logout]',
       '  UserSvc[User Service :3102<br/>profile, addresses, wallet]',
-      '  DriverSvc[Driver Service :3103<br/>register, vehicle, kyc, earnings]',
-      '  LocSvc[Location Service :3104<br/>ping, online, nearby]',
-      '  RideSvc[Ride Service :3105<br/>book, accept, start, end]',
+      '  DriverSvc[Driver Service :3103<br/>register, vehicle, KYC upload<br/>+ admin approve/reject, earnings]',
+      '  LocSvc[Location Service :3104<br/>ping, online gated on KYC, nearby]',
+      '  RideSvc[Ride Service :3105<br/>book, accept, start, end<br/>fare finalize, promo, cancel fee]',
       '  MatchSvc[Matching Service :3106<br/>score + fanout to drivers]',
-      '  PriceSvc[Pricing Service :3107<br/>estimate + surge Python]',
-      '  PaySvc[Payment Service :3108<br/>Razorpay + wallet ledger]',
-      '  NotifSvc[Notification Service :3109<br/>Redis Streams consumer FCM + email]',
+      '  PriceSvc[Pricing Service :3107<br/>estimate + surge + promo validate Python]',
+      '  PaySvc[Payment Service :3108<br/>Razorpay checkout + wallet<br/>+ cash + refunds + payouts]',
+      '  NotifSvc[Notification Service :3109<br/>Redis Streams consumer, FCM push]',
       '  RatingSvc[Rating Service :3110<br/>mutual rating 24h window]',
       '  PG[(PostgreSQL)]',
       '  RDS[(Redis<br/>Streams + PubSub + Geo)]',
@@ -217,9 +216,47 @@ const D = [
     ].join('\n')
   },
   {
+    id: 'onboarding', icon: '&#x1F6E1;',
+    title: 'Driver Onboarding and KYC Approval',
+    sub: 'A driver cannot go online until an admin approves their KYC',
+    code: [
+      'sequenceDiagram',
+      '  actor Driver',
+      '  participant DPWA as Driver PWA',
+      '  participant DriverSvc as Driver Service',
+      '  participant Cloudinary',
+      '  participant DB as PostgreSQL',
+      '  actor Admin',
+      '  participant AdminApp as Admin Dashboard',
+      '  participant LocSvc as Location Service',
+      '  Driver->>DPWA: First login - redirected to onboarding',
+      '  DPWA->>DriverSvc: POST /drivers/register',
+      '  DriverSvc->>DB: INSERT drivers kyc_status=pending',
+      '  Driver->>DPWA: Fill vehicle type make model plate',
+      '  DPWA->>DriverSvc: POST /drivers/me/vehicle',
+      '  Driver->>DPWA: Upload selfie license RC insurance x4',
+      '  DPWA->>DriverSvc: POST /drivers/me/kyc/upload per doc',
+      '  DriverSvc->>Cloudinary: store each file',
+      '  DriverSvc->>DB: UPDATE drivers kyc_status=submitted',
+      '  DPWA->>Driver: Under review, polls every 6s',
+      '  Admin->>AdminApp: Drivers tab, filter Submitted',
+      '  AdminApp->>DriverSvc: GET /admin/drivers',
+      '  Admin->>AdminApp: Tap Approve or Reject',
+      '  AdminApp->>DriverSvc: POST /admin/drivers/:id/kyc',
+      '  DriverSvc->>DB: UPDATE drivers kyc_status=approved',
+      '  DPWA->>DriverSvc: next poll of GET /drivers/me sees approved',
+      '  DPWA->>Driver: Redirect to home',
+      '  Driver->>DPWA: Tap Go Online',
+      '  DPWA->>LocSvc: POST /location/online',
+      '  LocSvc->>DB: SELECT kyc_status - must be approved',
+      '  Note over LocSvc: Rejects with 403 KYC_NOT_APPROVED otherwise',
+      '  LocSvc-->>DPWA: online'
+    ].join('\n')
+  },
+  {
     id: 'booking', icon: '&#x1F4F1;',
     title: 'Ride Booking - End to End',
-    sub: 'One tap triggers 7 services',
+    sub: 'One tap triggers 6+ services - vehicle, payment method and promo chosen before booking',
     code: [
       'sequenceDiagram',
       '  actor Rider',
@@ -231,21 +268,23 @@ const D = [
       '  participant MatchSvc as Matching Service',
       '  participant Redis',
       '  participant WS as WebSocket Hub',
-      '  participant Kafka',
+      '  participant Streams as Redis Streams',
       '  participant NotifSvc as Notification',
       '  Rider->>RiderPWA: Enter pickup + drop + vehicle',
       '  RiderPWA->>PriceSvc: GET /pricing/estimate',
       '  PriceSvc->>Redis: GET surge:zone_id',
       '  Redis-->>PriceSvc: multiplier',
       '  PriceSvc-->>RiderPWA: fare estimate',
-      '  Rider->>RiderPWA: Tap Book Ride',
-      '  RiderPWA->>RideSvc: POST /rides',
+      '  Rider->>RiderPWA: Pick payment method, promo code, tap Book Ride',
+      '  RiderPWA->>RideSvc: POST /rides incl paymentPreference promoCode',
+      '  RideSvc->>PriceSvc: POST /pricing/promo/validate if code given',
+      '  PriceSvc-->>RideSvc: discount amount',
       '  RideSvc->>RideSvc: INSERT rides status=searching',
-      '  RideSvc->>Kafka: PUBLISH ride.state_changed',
+      '  RideSvc->>Streams: XADD ride.state_changed',
       '  RideSvc-->>RiderPWA: rideId',
       '  RiderPWA->>WS: emit join_ride rideId',
       '  RideSvc->>MatchSvc: POST /match async 202',
-      '  MatchSvc->>Redis: GEORADIUS 3km',
+      '  MatchSvc->>Redis: GEORADIUS 3km, no vehicleType filter yet',
       '  Redis-->>MatchSvc: nearby drivers',
       '  MatchSvc->>MatchSvc: score and pick top 3',
       '  MatchSvc->>Redis: PUBLISH ride:request x3',
@@ -259,8 +298,8 @@ const D = [
       '  Redis->>WS: fanout',
       '  WS->>RiderPWA: emit ride_state + driver info',
       '  RiderPWA->>Rider: Show driver card',
-      '  RideSvc->>Kafka: PUBLISH driver_assigned',
-      '  Kafka->>NotifSvc: consume + FCM push'
+      '  RideSvc->>Streams: XADD driver_assigned',
+      '  Streams->>NotifSvc: XREADGROUP consume + FCM push'
     ].join('\n')
   },
   {
@@ -323,47 +362,54 @@ const D = [
   {
     id: 'payment', icon: '&#x1F4B3;',
     title: 'Payment Processing Flow',
-    sub: 'Ride end to wallet deduction or Razorpay to driver 80% credit',
+    sub: 'Fare recomputed from real trip time, then cash / instant wallet / Razorpay Checkout',
     code: [
       'sequenceDiagram',
       '  actor Driver',
       '  participant DPWA as Driver PWA',
       '  participant RideSvc as Ride Service',
+      '  participant PriceSvc as Pricing Service',
       '  participant PaySvc as Payment Service',
       '  participant DB as PostgreSQL',
       '  participant Razorpay',
-      '  participant Kafka',
-      '  participant NotifSvc as Notification',
+      '  participant RPWA as Rider PWA',
       '  Driver->>DPWA: Tap End Ride',
       '  DPWA->>RideSvc: POST /rides/:id/end',
-      '  RideSvc->>DB: UPDATE rides status=completed',
-      '  RideSvc->>PaySvc: POST /payments/charge fire-and-forget',
-      '  RideSvc-->>DPWA: completed',
-      '  PaySvc->>DB: SELECT idempotency_key - prevent double charge',
-      '  alt Wallet sufficient',
-      '    PaySvc->>DB: BEGIN',
-      '    PaySvc->>DB: UPDATE wallet_balance minus fare',
-      '    PaySvc->>DB: INSERT wallet_transactions debit',
-      '    PaySvc->>DB: COMMIT',
-      '  else Wallet insufficient',
-      '    PaySvc->>Razorpay: orders.create amount in paise',
-      '    Razorpay-->>PaySvc: orderId for Checkout',
+      '  RideSvc->>PriceSvc: GET estimate w actual duration + locked surge',
+      '  PriceSvc-->>RideSvc: recomputed fare',
+      '  RideSvc->>DB: UPDATE rides completed fare_final = fare minus promo_discount',
+      '  RideSvc-->>DPWA: completed - go to complete screen',
+      '  alt payment_preference = cash',
+      '    RideSvc->>PaySvc: POST /payments/cash-confirm',
+      '    PaySvc->>DB: INSERT payments method=cash status=captured',
+      '    Note over PaySvc: No wallet credit - driver already has the cash',
+      '  else wallet or card',
+      '    RideSvc->>PaySvc: POST /payments/charge forceRazorpay if card',
+      '    PaySvc->>DB: SELECT idempotency_key - prevent double charge',
+      '    alt wallet covers it and not forced to card',
+      '      PaySvc->>DB: BEGIN debit wallet + INSERT payments captured + COMMIT',
+      '      PaySvc->>PaySvc: credit driver 80 percent',
+      '    else Razorpay required',
+      '      PaySvc->>Razorpay: orders.create amount in paise',
+      '      Razorpay-->>PaySvc: orderId, payment stays pending',
+      '    end',
       '  end',
-      '  PaySvc->>DB: INSERT payments idempotency_key=ride:id',
-      '  Note over PaySvc: Credit driver 80 percent',
-      '  PaySvc->>DB: BEGIN',
-      '  PaySvc->>DB: UPDATE wallet_balance plus earning',
-      '  PaySvc->>DB: INSERT wallet_transactions credit',
-      '  PaySvc->>DB: COMMIT',
-      '  PaySvc->>Kafka: PUBLISH payment.processed',
-      '  Kafka->>NotifSvc: consume',
-      '  NotifSvc->>NotifSvc: FCM push + Resend email receipt'
+      '  opt Razorpay path only',
+      '    RPWA->>RPWA: Receipt screen shows Pay button',
+      '    RPWA->>Razorpay: Checkout.js test card 4111 1111 1111 1111',
+      '    Razorpay-->>RPWA: orderId + paymentId + signature',
+      '    RPWA->>PaySvc: POST /payments/verify',
+      '    PaySvc->>PaySvc: verify HMAC signature, mark captured',
+      '    PaySvc->>PaySvc: credit driver 80 percent',
+      '  end',
+      '  PaySvc->>PaySvc: XADD payment.processed - Notification Service FCM push',
+      '  Note over RPWA,DPWA: Once paid, both screens show a rating widget'
     ].join('\n')
   },
   {
     id: 'websocket', icon: '&#x1F50C;',
     title: 'WebSocket Architecture',
-    sub: 'Redis adapter syncs messages across all WS pods',
+    sub: 'Redis adapter syncs messages across all WS pods - loads REDIS_URL once at boot, does not hot-reload it',
     code: [
       'graph LR',
       '  LS[Location Service] --> CH1[driver:id:location<br/>Redis PubSub channel]',
@@ -389,35 +435,34 @@ const D = [
   {
     id: 'statemachine', icon: '&#x1F504;',
     title: 'Ride State Machine',
-    sub: 'All 8 states, transitions and side effects',
+    sub: 'en_route is defined but never actually reached - driver goes straight from assigned to arrived',
     code: [
       'stateDiagram-v2',
       '  [*] --> REQUESTED : POST /rides',
       '  REQUESTED --> SEARCHING : Ride Service creates record',
       '  SEARCHING --> DRIVER_ASSIGNED : Driver accepts',
-      '  SEARCHING --> CANCELLED : Rider cancels or no drivers',
-      '  DRIVER_ASSIGNED --> EN_ROUTE : Auto after assignment',
-      '  DRIVER_ASSIGNED --> CANCELLED : Driver cancels',
-      '  EN_ROUTE --> DRIVER_ARRIVED : Driver taps Arrived',
-      '  EN_ROUTE --> CANCELLED : Driver cancels',
+      '  SEARCHING --> CANCELLED : Rider cancels, or matching gives up',
+      '  DRIVER_ASSIGNED --> DRIVER_ARRIVED : Driver taps Arrived',
+      '  DRIVER_ASSIGNED --> CANCELLED : Rider or driver cancels - no fee',
       '  DRIVER_ARRIVED --> IN_PROGRESS : Driver taps Start Ride',
-      '  IN_PROGRESS --> COMPLETED : Driver taps End Ride',
-      '  IN_PROGRESS --> CANCELLED : Emergency or SOS',
-      '  COMPLETED --> [*] : Payment + rating window 24h',
-      '  CANCELLED --> [*] : Refund if payment taken'
+      '  DRIVER_ARRIVED --> CANCELLED : Rider cancels - 20 rupee fee to driver',
+      '  IN_PROGRESS --> COMPLETED : Driver taps End Ride - fare recomputed',
+      '  COMPLETED --> [*] : Payment settles, rating available',
+      '  CANCELLED --> [*]'
     ].join('\n')
   },
   {
     id: 'erd', icon: '&#x1F5C4;',
     title: 'Database ERD',
-    sub: 'All 10 PostgreSQL tables and relationships',
+    sub: 'Core PostgreSQL tables and relationships (promo_usages, referrals omitted for space)',
     code: [
       'erDiagram',
       '  USERS { uuid id PK varchar phone UK varchar name varchar role decimal wallet_balance }',
       '  DRIVERS { uuid id PK varchar kyc_status varchar status decimal rating int total_rides }',
       '  VEHICLES { uuid id PK uuid driver_id FK varchar type varchar make varchar plate_no }',
-      '  RIDES { uuid id PK uuid rider_id FK uuid driver_id FK varchar status decimal fare_estimate decimal fare_final timestamptz requested_at }',
-      '  PAYMENTS { uuid id PK uuid ride_id FK decimal amount varchar method varchar idempotency_key UK }',
+      '  RIDES { uuid id PK uuid rider_id FK uuid driver_id FK varchar status decimal fare_estimate decimal fare_final varchar payment_preference decimal cancellation_fee timestamptz requested_at }',
+      '  PAYMENTS { uuid id PK uuid ride_id FK uuid user_id FK decimal amount varchar method varchar purpose varchar idempotency_key UK }',
+      '  PAYOUT_REQUESTS { uuid id PK uuid driver_id FK decimal amount varchar status }',
       '  WALLET_TRANSACTIONS { uuid id PK uuid user_id FK varchar type decimal amount decimal balance_after }',
       '  RATINGS { uuid id PK uuid ride_id FK uuid from_user_id FK smallint score }',
       '  PROMO_CODES { uuid id PK varchar code UK varchar discount_type decimal discount_value }',
@@ -426,7 +471,9 @@ const D = [
       '  USERS ||--o{ RIDES : "driver_id"',
       '  USERS ||--|| DRIVERS : "profile"',
       '  DRIVERS ||--o{ VEHICLES : "owns"',
-      '  RIDES ||--o{ PAYMENTS : "charged via"',
+      '  RIDES ||--o{ PAYMENTS : "ride fare"',
+      '  USERS ||--o{ PAYMENTS : "wallet top-up"',
+      '  USERS ||--o{ PAYOUT_REQUESTS : "driver withdrawal"',
       '  USERS ||--o{ WALLET_TRANSACTIONS : "history"',
       '  RIDES ||--o{ RATINGS : "rated after"',
       '  USERS ||--o{ SAVED_ADDRESSES : "saved places"'
@@ -434,16 +481,16 @@ const D = [
   },
   {
     id: 'kafka', icon: '&#x1F4E8;',
-    title: 'Kafka Event Bus',
-    sub: 'Producers, topics, consumers and Redis pub/sub for real-time',
+    title: 'Redis Streams Event Bus',
+    sub: 'Producers, streams, consumers and Redis pub/sub for real-time (Kafka was replaced pre-launch)',
     code: [
       'graph TB',
       '  RideSvc[Ride Service] -->|XADD| S1[ride.state_changed<br/>Redis Stream]',
       '  PaySvc[Payment Service] -->|XADD| S2[payment.processed<br/>Redis Stream]',
+      '  PaySvc -.->|XADD, no reader yet| S3[payment.failed / payment.refunded<br/>Redis Stream]',
       '  S1 -->|XREADGROUP at-least-once| NS[Notification Service<br/>Redis Streams consumer]',
       '  S2 --> NS',
       '  NS -->|push notifications| FCM[Firebase FCM]',
-      '  NS -->|email receipts| EMAIL[Resend Email]',
       '  LocSvc[Location Service] -->|GPS pings| CH1[driver:id:location<br/>Redis PubSub]',
       '  RideSvc -->|state changes| CH2[ride:state<br/>Redis PubSub]',
       '  MatchSvc[Matching Service] -->|requests| CH3[ride:request<br/>Redis PubSub]',
@@ -595,7 +642,8 @@ async function show(id) {
 
   const wrap = document.getElementById('pz-' + id)
   if (wrap) {
-    activePz = Panzoom(wrap, { maxScale: 10, minScale: 0.1, step: 0.1, startScale: 1 })
+    const savedScale = parseFloat(localStorage.getItem('rideapp-arch-zoom-' + id)) || 1
+    activePz = Panzoom(wrap, { maxScale: 10, minScale: 0.1, step: 0.1, startScale: savedScale })
     // Wheel zoom on the whole canvas area
     document.getElementById('cw').onwheel = e => {
       if (!activePz) return
@@ -609,7 +657,10 @@ async function show(id) {
 }
 
 function zl() {
-  if (activePz) document.getElementById('zl').textContent = Math.round(activePz.getScale() * 100) + '%'
+  if (!activePz) return
+  const scale = activePz.getScale()
+  document.getElementById('zl').textContent = Math.round(scale * 100) + '%'
+  if (activeId) localStorage.setItem('rideapp-arch-zoom-' + activeId, scale)
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

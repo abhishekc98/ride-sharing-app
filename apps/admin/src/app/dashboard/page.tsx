@@ -4,15 +4,14 @@ import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { api } from '@/lib/api'
 import { useAdminStore } from '@/stores/adminStore'
+import { Sidebar } from '@/components/Sidebar'
 
 const AdminMap = dynamic(() => import('@/components/map/AdminMap'), { ssr: false })
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { token, clearAuth } = useAdminStore()
-  const [stats, setStats] = useState<any>(null)
+  const { token } = useAdminStore()
   const [activeRides, setActiveRides] = useState<any[]>([])
-  const [onlineDrivers, setOnlineDrivers] = useState<any[]>([])
 
   useEffect(() => {
     if (!token) router.replace('/login')
@@ -21,12 +20,10 @@ export default function DashboardPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [ridesRes] = await Promise.all([
-          api.get('/api/v1/rides/history?limit=5'),
-        ])
-        setActiveRides(ridesRes.data.data?.filter((r: any) =>
-          ['searching', 'driver_assigned', 'en_route', 'in_progress'].includes(r.status)
-        ) ?? [])
+        const res = await api.get('/api/v1/admin/rides', { params: { limit: 50 } })
+        setActiveRides((res.data.data ?? []).filter((r: any) =>
+          ['searching', 'driver_assigned', 'en_route', 'driver_arrived', 'in_progress'].includes(r.status)
+        ))
       } catch {}
     }
     fetchData()
@@ -34,28 +31,9 @@ export default function DashboardPage() {
     return () => clearInterval(id)
   }, [])
 
-  const NAV = [
-    { label: 'Dashboard', href: '/dashboard', icon: '📊' },
-    { label: 'Drivers', href: '/drivers', icon: '🛵' },
-    { label: 'Rides', href: '/rides', icon: '📋' },
-    { label: 'Analytics', href: '/analytics', icon: '📈' },
-  ]
-
   return (
     <div className="flex h-screen bg-gray-950 text-white">
-      {/* Sidebar */}
-      <div className="w-56 bg-gray-900 flex flex-col p-4">
-        <div className="text-orange-500 font-bold text-xl mb-8 mt-2">🛵 Ops</div>
-        {NAV.map((n) => (
-          <button key={n.href} onClick={() => router.push(n.href)}
-            className="flex items-center gap-3 px-3 py-3 rounded-xl mb-1 hover:bg-gray-800 text-left text-sm font-medium">
-            <span>{n.icon}</span> {n.label}
-          </button>
-        ))}
-        <div className="flex-1" />
-        <button onClick={() => { clearAuth(); router.replace('/login') }}
-          className="text-red-400 text-sm px-3 py-3">Sign Out</button>
-      </div>
+      <Sidebar />
 
       {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">

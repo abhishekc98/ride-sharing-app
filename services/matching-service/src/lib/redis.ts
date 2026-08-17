@@ -1,4 +1,4 @@
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 
 let client: Redis | null = null
 export const getRedis = () => {
@@ -34,4 +34,15 @@ export async function publishRideRequest(driverId: string, data: object) {
 
 export async function publishRideRequestCancelled(driverId: string, rideId: string) {
   await getRedis().publish('ride:request_cancelled', JSON.stringify({ driverId, rideId }))
+}
+
+// Record which drivers a ride's request was fanned out to, so ride-service can
+// tell the losers to stop waiting the instant one of them accepts, instead of
+// leaving their modal to time out client-side after 30s.
+export async function storeRideCandidates(rideId: string, driverIds: string[]) {
+  if (driverIds.length === 0) return
+  const redis = getRedis()
+  const key = `ride:${rideId}:candidates`
+  await redis.sadd(key, ...driverIds)
+  await redis.expire(key, 45) // outlives the 30s client timeout, then self-cleans
 }

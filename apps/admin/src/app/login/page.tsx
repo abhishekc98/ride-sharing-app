@@ -24,6 +24,14 @@ export default function AdminLoginPage() {
         firebaseToken: `dev_token_${formatted}`, role: 'admin',
       })
       const { accessToken, user } = res.data.data
+      if (user.role !== 'admin') {
+        // This phone number was already registered under a different role
+        // (e.g. tested as a rider/driver earlier) — the backend keeps the
+        // original role on repeat login rather than silently re-assigning
+        // it, so this account can never actually reach admin endpoints.
+        setError(`This number is registered as "${user.role}", not admin — use a phone that's never logged into any RideApp login before, or one already seeded as admin.`)
+        return
+      }
       setAuth(accessToken, user)
       router.replace('/dashboard')
     } catch (err: any) {

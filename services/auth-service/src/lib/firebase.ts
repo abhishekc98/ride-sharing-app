@@ -20,8 +20,9 @@ export function initFirebase() {
 
 export async function verifyFirebaseToken(idToken: string): Promise<{ phone: string }> {
   if (process.env.DEV_BYPASS_OTP === 'true') {
-    // Dev mode: token is phone number directly
-    return { phone: idToken }
+    // Dev token format: "dev_token_+919999999999" — strip prefix to get phone
+    const phone = idToken.startsWith('dev_token_') ? idToken.slice('dev_token_'.length) : idToken
+    return { phone }
   }
   const decoded = await admin.auth().verifyIdToken(idToken)
   if (!decoded.phone_number) throw new Error('No phone number in token')

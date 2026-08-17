@@ -8,7 +8,7 @@ Follow these steps in order. After each step, copy the key/URL into `.env.keys`.
 
 Install CLIs:
 ```bash
-npm install -g vercel railway
+npm install -g vercel @railway/cli
 ```
 
 ---
@@ -159,13 +159,23 @@ FIREBASE_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE
 2. Sign Up → fill basic details → verify email (no KYC needed for test mode)
 3. Dashboard → Settings → API Keys → Generate Test Key
 4. Copy Key ID and Key Secret
+5. (Production only — not needed for local dev, see below) Settings →
+   Webhooks → add `https://<your-api-domain>/api/v1/payments/webhook/razorpay`,
+   subscribe to `payment.captured` and `payment.failed`, copy the webhook secret
 
 ```
 # Paste into .env.keys:
 RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
 RAZORPAY_KEY_SECRET=xxxxxxxxxxxxxxxxxxxx
 NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_xxxxxxxxxxxx
+RAZORPAY_WEBHOOK_SECRET=xxxxxxxxxxxxxxxxxxxx
 ```
+
+Locally, the rider's browser confirms its own payment directly
+(`POST /payments/verify`, checked against `RAZORPAY_KEY_SECRET`) — Checkout
+can't reach a webhook on localhost. The webhook is the production safety
+net for payments the client-side confirmation misses (e.g. tab closed
+mid-payment), and needs `RAZORPAY_WEBHOOK_SECRET` from step 5 above.
 
 ---
 
@@ -185,6 +195,10 @@ CLOUDINARY_API_SECRET=xxxxxxxxxxxxxxxxxxxx
 ---
 
 ## Step 11 — Resend Email (2 min)
+
+Not currently called from any code path — `notification-service` only
+sends FCM push, no email — so this step can be skipped for now. Included
+here in case that changes; harmless to set up either way.
 
 1. Go to https://resend.com/signup
 2. Sign up with GitHub → verify email

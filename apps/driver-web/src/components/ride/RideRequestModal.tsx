@@ -32,7 +32,14 @@ export function RideRequestModal() {
     setLoading(true)
     try {
       await api.post(`/api/v1/rides/${pendingRequest.rideId}/accept`)
-      setCurrentRide({ id: pendingRequest.rideId, status: 'driver_assigned' })
+      setCurrentRide({
+        id: pendingRequest.rideId,
+        status: 'driver_assigned',
+        pickupLat: pendingRequest.pickupLat,
+        pickupLng: pendingRequest.pickupLng,
+        dropLat: pendingRequest.dropLat,
+        dropLng: pendingRequest.dropLng,
+      })
       setPendingRequest(null)
     } catch (err: any) {
       alert(err.response?.data?.error ?? 'Could not accept')

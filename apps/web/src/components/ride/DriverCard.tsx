@@ -1,5 +1,9 @@
 'use client'
+import { useState } from 'react'
+import { api } from '@/lib/api'
 import { useRideStore } from '@/stores/rideStore'
+
+const CANCELLABLE_STATUSES = ['searching', 'driver_assigned', 'en_route']
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   searching: { label: 'Finding your driver...', color: 'text-orange-500' },
@@ -12,9 +16,40 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 }
 
 export function DriverCard() {
-  const { status, driver, rideId } = useRideStore()
+  const { status, driver, rideId, reset } = useRideStore()
+  const [cancelling, setCancelling] = useState(false)
 
   const statusInfo = STATUS_LABELS[status] ?? { label: status, color: 'text-gray-600' }
+
+  const cancelRide = async () => {
+    if (!rideId || !confirm('Cancel this ride?')) return
+    setCancelling(true)
+    try {
+      await api.post(`/api/v1/rides/${rideId}/cancel`, { reason: 'Cancelled by rider' })
+      reset()
+    } catch (err: any) {
+      // The ride can legitimately move out of a cancellable state between
+      // this screen rendering the button and the request landing — e.g.
+      // matching gives up and auto-cancels, or the driver starts the ride,
+      // right as the rider taps Cancel. The socket event for that usually
+      // beats this response, but isn't guaranteed to — so on exactly this
+      // error, resync from the server instead of leaving the rider stuck on
+      // a stale screen with a raw error and a dead Cancel button.
+      if (err.response?.data?.code === 'INVALID_STATE') {
+        try {
+          const { data } = await api.get(`/api/v1/rides/${rideId}`)
+          if (data.data.status === 'cancelled' || data.data.status === 'completed') reset()
+          else useRideStore.getState().setStatus(data.data.status)
+        } catch {
+          alert('This ride has already moved on — pull to refresh')
+        }
+      } else {
+        alert(err.response?.data?.error ?? 'Could not cancel — try again')
+      }
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   return (
     <div className="fixed bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl p-6 z-50">
@@ -49,6 +84,16 @@ export function DriverCard() {
             📞
           </a>
         </div>
+      )}
+
+      {/* Cancel */}
+      {CANCELLABLE_STATUSES.includes(status) && (
+        <button
+          onClick={cancelRide}
+          disabled={cancelling}
+          className="w-full border-2 border-gray-300 text-gray-600 rounded-2xl py-3 font-bold mb-3 disabled:opacity-60">
+          {cancelling ? 'Cancelling…' : 'Cancel Ride'}
+        </button>
       )}
 
       {/* SOS */}

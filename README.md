@@ -42,9 +42,27 @@ pnpm --filter @ride/admin dev               # :3003 (Admin)
 ```
 
 ## Dev Test Credentials
-- Phone: any 10-digit number (e.g., `9999999999`)
+- Phone: any 10-digit number (e.g., `9999999999`) — **a phone number keeps whatever role it first registered under**; reusing one across rider/driver/admin apps does not change its role. Use a distinct number per role, or the seeded admin number below.
 - OTP: `000000` (bypasses Firebase in dev mode)
 - Test payment: UPI `success@razorpay` / Card `4111 1111 1111 1111`
+- Seeded admin: `9000000000` (`tools/seed/seed.js`)
+
+## Payments & Driver Onboarding
+
+- **Rider pays**: at booking, choose Wallet / Card·UPI / Cash. Wallet and
+  Card go through real Razorpay Checkout (test mode) via a receipt screen
+  shown after the ride ends; Cash settles in person with no in-app charge.
+  Wallet top-up (rider) and payout withdrawal (driver) both use the same
+  Checkout flow.
+- **Driver onboarding**: a new driver must submit a vehicle + 4 KYC
+  documents and be **approved by an admin** (`apps/admin` → Drivers) before
+  "Go Online" is allowed — `location-service` rejects it otherwise
+  (`KYC_NOT_APPROVED`).
+- **Driver payouts**: there's no real bank-transfer integration — a
+  driver's "Withdraw to bank" request is settled manually by an admin
+  (`apps/admin` → Payouts).
+- See `tests/manual-ride-flow.md` for the full walkthrough, including the
+  onboarding/approval steps.
 
 ## Cloud Deployment (Render — free, no credit card)
 
@@ -76,12 +94,12 @@ Admin      ──┘         │            └─ MongoDB (Atlas)
 | **api** (merged) | **3000** | All 9 services in one process (production) |
 | auth-service | 3101 | Firebase OTP → JWT |
 | user-service | 3102 | Rider profile CRUD |
-| driver-service | 3103 | Driver profile, KYC, earnings |
-| location-service | 3104 | GPS ping → Redis GEOADD |
-| ride-service | 3105 | Ride state machine |
+| driver-service | 3103 | Driver profile, vehicle, KYC upload + admin approval, earnings |
+| location-service | 3104 | GPS ping → Redis GEOADD, gates "online" on KYC approval |
+| ride-service | 3105 | Ride state machine, fare finalization, promo, cancellation fee, admin ride list |
 | matching-service | 3106 | Driver scoring & assignment |
-| pricing-service | 3107 | Fare estimate, surge (Python) |
-| payment-service | 3108 | Razorpay + wallet ledger |
-| notification-service | 3109 | Redis Streams consumer, FCM + email |
+| pricing-service | 3107 | Fare estimate, surge, promo validation (Python) |
+| payment-service | 3108 | Razorpay checkout + wallet + cash + refunds + driver payouts |
+| notification-service | 3109 | Redis Streams consumer, FCM push |
 | rating-service | 3110 | Mutual rating 24h window |
 | websocket-hub | 3200 | Real-time Socket.io |

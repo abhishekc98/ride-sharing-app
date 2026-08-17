@@ -28,14 +28,24 @@ interface DriverState {
   accessToken: string | null
   refreshToken: string | null
   isOnline: boolean
-  currentRide: { id: string; status: string; riderId?: string } | null
+  currentRide: {
+    id: string
+    status: string
+    riderId?: string
+    pickupLat?: number
+    pickupLng?: number
+    dropLat?: number
+    dropLng?: number
+  } | null
   pendingRequest: RideRequest | null
+  _hasHydrated: boolean
   setAuth: (user: DriverUser, accessToken: string, refreshToken: string) => void
   clearAuth: () => void
   setOnline: (online: boolean) => void
   setCurrentRide: (ride: DriverState['currentRide']) => void
   setRideStatus: (status: string) => void
   setPendingRequest: (req: RideRequest | null) => void
+  setHasHydrated: (v: boolean) => void
 }
 
 export const useDriverStore = create<DriverState>()(
@@ -47,6 +57,7 @@ export const useDriverStore = create<DriverState>()(
       isOnline: false,
       currentRide: null,
       pendingRequest: null,
+      _hasHydrated: false,
       setAuth: (user, accessToken, refreshToken) => {
         localStorage.setItem('driverAccessToken', accessToken)
         localStorage.setItem('driverRefreshToken', refreshToken)
@@ -62,7 +73,11 @@ export const useDriverStore = create<DriverState>()(
       setRideStatus: (status) =>
         set((s) => ({ currentRide: s.currentRide ? { ...s.currentRide, status } : null })),
       setPendingRequest: (pendingRequest) => set({ pendingRequest }),
+      setHasHydrated: (v) => set({ _hasHydrated: v }),
     }),
-    { name: 'ride-driver' }
+    {
+      name: 'ride-driver',
+      onRehydrateStorage: () => (state) => { state?.setHasHydrated(true) },
+    }
   )
 )

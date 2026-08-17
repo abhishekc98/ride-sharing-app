@@ -243,11 +243,9 @@ sequenceDiagram
     participant RideSvc as Ride Service
     participant PricingSvc as Pricing Service
     participant MatchSvc as Matching Service
-    participant LocSvc as Location Service
     participant Redis
     participant WS as WebSocket Hub
     participant Streams as Redis Streams
-    participant PaySvc as Payment Service
     participant NotifSvc as Notification Service
 
     Rider->>RiderPWA: Enter pickup + drop + vehicle type
@@ -257,10 +255,15 @@ sequenceDiagram
     PricingSvc-->>RiderPWA: {total: ₹120, surgeMultiplier: 1.2}
     RiderPWA->>Rider: Show fare estimate
 
-    Rider->>RiderPWA: Tap "Book Ride"
-    RiderPWA->>RideSvc: POST /rides {pickup, drop, vehicleType}
+    Rider->>RiderPWA: Tap "Book Ride"\n(chosen vehicle, payment method, optional promo code)
+    RiderPWA->>RideSvc: POST /rides {pickup, drop, vehicleType,\npaymentPreference, promoCode?}
     RideSvc->>PricingSvc: GET /pricing/estimate (confirm fare)
     PricingSvc-->>RideSvc: fare confirmed
+    opt promoCode present
+        RideSvc->>PricingSvc: POST /pricing/promo/validate {code, fareAmount}
+        PricingSvc-->>RideSvc: {valid, discount}
+        Note over RideSvc: fare_estimate -= discount, stored as promo_discount
+    end
     RideSvc->>RideSvc: INSERT INTO rides (status=searching)
     RideSvc->>Streams: XADD ride.state_changed {rideId, status:searching}
     RideSvc-->>RiderPWA: {rideId, status:searching}
@@ -271,10 +274,9 @@ sequenceDiagram
     RideSvc->>MatchSvc: POST /match {rideId, pickupLat, pickupLng, ...}
     Note over MatchSvc: Async — returns 202 immediately
 
-    MatchSvc->>LocSvc: GET /location/nearby?lat&lng&radius=3
-    LocSvc->>Redis: GEORADIUS drivers:geo:default
-    Redis-->>LocSvc: [{driverId, distanceKm}...]
-    LocSvc-->>MatchSvc: nearby online drivers
+    MatchSvc->>Redis: GEORADIUS drivers:geo:default
+    Note over MatchSvc: Matching Service queries Redis directly —\nnot via Location Service's HTTP API. It also does\nNOT filter by vehicleType yet, only by online status.
+    Redis-->>MatchSvc: [{driverId, distanceKm}...]
 
     MatchSvc->>MatchSvc: Score each driver\nscore = (1/dist)*0.5 + acceptance*0.3 + rating*0.2
     MatchSvc->>MatchSvc: Pick top 3 drivers
@@ -400,65 +402,93 @@ sequenceDiagram
 
 ## 7. Payment Processing Flow
 
-What happens in the 2 seconds after a driver taps "End Ride".
+What happens after a driver taps "End Ride", and how the rider actually
+settles the fare — the fare itself is recomputed from the real trip before
+any of this starts, not just copied from the pre-ride estimate.
 
 ```mermaid
 sequenceDiagram
     actor Driver
     participant DriverPWA as Driver PWA
     participant RideSvc as Ride Service
+    participant Pricing as Pricing Service
     participant PaySvc as Payment Service
     participant DB as PostgreSQL
     participant Razorpay
     participant Streams as Redis Streams
     participant NotifSvc as Notification Service
-    participant RatingSvc as Rating Service
-    actor Rider
+    actor Rider as Rider PWA
 
     Driver->>DriverPWA: Tap "End Ride"
     DriverPWA->>RideSvc: POST /rides/:id/end
 
-    RideSvc->>DB: UPDATE rides SET status=completed, ended_at=NOW()
-    RideSvc->>RideSvc: Publish ride state to WebSocket
-    Note over RideSvc: Fire-and-forget payment trigger
-    RideSvc->>PaySvc: POST /payments/charge\n{rideId, riderId, driverId, amount}
+    RideSvc->>Pricing: GET /pricing/estimate\n?actualDurationMinutes=(now-started_at)\n&surgeMultiplier=(locked in at booking)
+    Pricing-->>RideSvc: recomputed total
+    Note over RideSvc: fare_final = total − promo_discount\n(promo amount is fixed at booking, not rescaled)
+    RideSvc->>DB: UPDATE rides SET status=completed,\nended_at=NOW(), fare_final=...
+    RideSvc->>RideSvc: Publish ride state to WebSocket\n(driver → /ride/:id/complete, rider → /ride/:id/receipt)
     RideSvc-->>DriverPWA: {status: completed}
 
-    PaySvc->>DB: SELECT idempotency_key\nfrom payments WHERE key=ride:{id}
-    Note over PaySvc: Idempotency check prevents double charge
+    Note over RideSvc,PaySvc: Fire-and-forget, branches on rides.payment_preference
 
-    alt First time charging
-        PaySvc->>DB: SELECT wallet_balance FROM users WHERE id=riderId
+    alt payment_preference = cash
+        RideSvc->>PaySvc: POST /payments/cash-confirm\n{rideId, riderId, driverId, amount}
+        PaySvc->>DB: INSERT INTO payments (method=cash, status=captured)
+        PaySvc->>DB: UPDATE rides SET payment_status=paid, payment_method=cash
+        Note over PaySvc: No wallet movement — driver already\nholds the cash in person
+    else payment_preference = wallet or card
+        RideSvc->>PaySvc: POST /payments/charge\n{rideId, riderId, driverId, amount,\nforceRazorpay: preference=='card'}
+        PaySvc->>DB: SELECT idempotency_key FROM payments WHERE key=ride:{id}
+        Note over PaySvc: Idempotency check prevents double charge
 
-        alt Wallet balance >= fare
-            PaySvc->>DB: BEGIN\nUPDATE users SET wallet_balance = wallet_balance - amount\nINSERT INTO wallet_transactions\nCOMMIT
-            Note over PaySvc: Atomic deduction — no race condition
-        else Insufficient wallet
+        alt not forceRazorpay AND wallet_balance >= amount
+            PaySvc->>DB: BEGIN\nUPDATE users SET wallet_balance -= amount\nINSERT INTO wallet_transactions\nCOMMIT
+            PaySvc->>DB: INSERT INTO payments (method=wallet, status=captured)
+            PaySvc->>DB: UPDATE rides SET payment_status=paid
+            PaySvc->>PaySvc: creditDriverPayout() — 80% of fare
+            PaySvc->>Streams: XADD payment.processed
+        else Razorpay checkout required
             PaySvc->>Razorpay: orders.create({amount, currency:INR, receipt:rideId})
             Razorpay-->>PaySvc: {orderId}
-            Note over PaySvc: Rider completes payment in PWA\nvia Razorpay Checkout UI
+            PaySvc->>DB: INSERT INTO payments\n(method=razorpay, status=pending, gateway_ref=orderId)
+            Note over PaySvc,Rider: Ride stays payment_status=null —\nnothing captured yet
         end
-
-        PaySvc->>DB: INSERT INTO payments\n(idempotency_key=ride:{id}, status=captured)
-        PaySvc->>DB: UPDATE rides SET fare_final, payment_status=paid
-
-        Note over PaySvc: Credit driver 80% of fare
-        PaySvc->>DB: BEGIN\nUPDATE users SET wallet_balance += amount*0.8\nWHERE id=driverId\nINSERT INTO wallet_transactions\nCOMMIT
-
-        PaySvc->>Streams: XADD payment.processed\n{rideId, riderId, driverId, amount, method}
     end
 
-    Streams->>NotifSvc: XREADGROUP delivers event
+    opt Razorpay path only
+        Rider->>Rider: Receipt screen shows "Pay ₹X"
+        Rider->>Razorpay: Checkout.js (test mode)\ncard 4111 1111 1111 1111 / UPI success@razorpay
+        Razorpay-->>Rider: {razorpay_order_id, razorpay_payment_id, razorpay_signature}
+        Rider->>PaySvc: POST /payments/verify {order_id, payment_id, signature}
+        PaySvc->>PaySvc: verifyPaymentSignature() — HMAC over\norderId|paymentId with RAZORPAY_KEY_SECRET
+        PaySvc->>DB: UPDATE payments SET status=captured, gateway_payment_id
+        PaySvc->>DB: UPDATE rides SET payment_status=paid
+        PaySvc->>PaySvc: creditDriverPayout() — 80% of fare
+        PaySvc->>Streams: XADD payment.processed
+        Note over PaySvc: POST /payments/webhook/razorpay independently\nconfirms the same capture server-side — the source\nof truth in production, where Checkout can reach\na public webhook URL. Not required for the local\nflow above, which /verify already settles.
+    end
+
+    Streams->>NotifSvc: XREADGROUP delivers payment.processed
     NotifSvc->>NotifSvc: getFCMToken(riderId)
     NotifSvc->>NotifSvc: FCM.send("Payment Confirmed", "₹{amount} paid")
 
-    Note over RatingSvc: Rating window opens
-    RideSvc->>RatingSvc: (via event) open rating window for 24h
-    RatingSvc->>Rider: Rating modal appears in PWA
-    Rider->>RatingSvc: POST /ratings {rideId, score, comment}
-    RatingSvc->>DB: INSERT INTO ratings ON CONFLICT DO UPDATE
-    RatingSvc->>DB: UPDATE drivers SET rating = AVG of all scores
+    Note over Rider,Driver: Once paid, both completion screens show\na 1–5 star rating widget for the other party —\nnot push-driven, just rendered once payment_status=paid
+    Rider->>RideSvc: (rating-service) POST /ratings {rideId, toUserId, score}
+    Driver->>RideSvc: (rating-service) POST /ratings {rideId, toUserId, score}
 ```
+
+**Driver payouts** (separate from the above): a driver's "Withdraw to bank"
+debits their wallet immediately into a `payout_requests` row
+(`status: requested`) — there's no real bank-transfer integration, so an
+admin settles it by hand from `apps/admin` → Payouts, which either marks it
+`settled` or `rejected` (crediting the wallet back).
+
+**Refunds**: an admin can refund a `captured` payment
+(`POST /payments/:id/refund`) — Razorpay payments go back through the
+gateway (`issueRefund`, using the stored `gateway_payment_id`), wallet
+payments are credited back in-app. Cash payments can't be refunded in-app
+(nothing was collected by the platform to reverse). Driver earnings already
+paid out from a refunded ride are **not** clawed back.
 
 ---
 
@@ -535,6 +565,12 @@ flowchart TB
 
 Every ride is a finite state machine. Transitions are guarded by a Redis distributed lock.
 
+`en_route` is a defined status (used in a couple of frontend status labels
+and accepted wherever `driver_arrived` is) but nothing in `ride-service`
+ever actually sets it — a driver goes `driver_assigned` → `driver_arrived`
+directly. It's carried in this diagram only because the code still treats
+it as a valid, cancellable pre-arrival state.
+
 ```mermaid
 stateDiagram-v2
     [*] --> REQUESTED : POST /rides
@@ -542,44 +578,53 @@ stateDiagram-v2
     REQUESTED --> SEARCHING : Ride Service creates record
 
     SEARCHING --> DRIVER_ASSIGNED : Driver accepts\n(Ride Service acquires lock,\nupdates DB, releases lock)
-    SEARCHING --> CANCELLED : Rider cancels\nOR no drivers found after 3 retries
+    SEARCHING --> CANCELLED : Rider/driver cancels, OR matching\ngives up (no driver found after 3\nradius retries, or none of the drivers\nnotified responded within 35s)
 
-    DRIVER_ASSIGNED --> EN_ROUTE : Auto-transition\n(after assignment confirmed)
-    DRIVER_ASSIGNED --> CANCELLED : Driver cancels
-
-    EN_ROUTE --> DRIVER_ARRIVED : POST /rides/:id/arrived\n(Driver taps "I've Arrived")
-    EN_ROUTE --> CANCELLED : Driver cancels
+    DRIVER_ASSIGNED --> DRIVER_ARRIVED : POST /rides/:id/arrived\n(Driver taps "I've Arrived")
+    DRIVER_ASSIGNED --> CANCELLED : Rider/driver cancels — no fee
 
     DRIVER_ARRIVED --> IN_PROGRESS : POST /rides/:id/start\n(Driver taps "Start Ride")
+    DRIVER_ARRIVED --> CANCELLED : Rider cancels — ₹20 fee charged\nto rider's wallet if it covers it,\ncredited to the driver (best-effort,\nno debt tracking if balance is short)
 
-    IN_PROGRESS --> COMPLETED : POST /rides/:id/end\n(Driver taps "End Ride")\n→ triggers Payment + Rating
-    IN_PROGRESS --> CANCELLED : Emergency / SOS
+    IN_PROGRESS --> COMPLETED : POST /rides/:id/end\n(Driver taps "End Ride")\n→ fare recomputed from actual\ntrip time, then charged
 
-    COMPLETED --> [*] : Payment processed\nRating window open 24h
-    CANCELLED --> [*] : Refund if payment taken
+    COMPLETED --> [*] : Payment settles\n(instant, or after Razorpay Checkout)
+    CANCELLED --> [*]
 
     note right of SEARCHING
         Matching Service runs async:
-        1. GEORADIUS top 3 drivers
+        1. GEORADIUS top 3 online drivers (no vehicle-type filter yet)
         2. PUBLISH to their Redis channels
         3. First accept wins
-        4. Retry with larger radius if all decline
+        4. Retry with +3km radius, 3 attempts total
+        5. If a request was sent but nobody responded in 35s,
+           ride-service auto-cancels (cancelled_by='system')
     end note
 
     note right of COMPLETED
         On completion:
-        → Payment Service charges rider
-        → Driver gets 80% credited to wallet
+        → fare_final recomputed via pricing-service using real
+          elapsed time + the surge locked in at booking
+        → Payment Service charges per rides.payment_preference:
+          cash (no charge), wallet (instant if it covers the fare),
+          or card (Razorpay Checkout)
+        → Driver gets 80% credited to wallet once captured —
+          except cash, where the driver already holds it
         → Redis Stream event triggers FCM push
-        → Rating window opens
+        → Rating widget available on both completion screens
+          (rating-service enforces a 24h rateable window)
     end note
 ```
+
+SOS (`POST /rides/:id/sos`) does **not** change ride status — it only
+publishes a `ride.sos` event for `admin-ops` to see. It's a side-channel
+alert, not a cancellation.
 
 ---
 
 ## 10. Database ERD
 
-All 10 tables, their columns, and relationships in PostgreSQL (Neon).
+All 12 tables, their columns, and relationships in PostgreSQL (Neon).
 
 ```mermaid
 erDiagram
@@ -634,24 +679,43 @@ erDiagram
         decimal fare_estimate
         decimal fare_final
         decimal surge_multiplier
-        varchar payment_method
+        varchar promo_code
+        decimal promo_discount
+        varchar payment_preference "rider's choice at booking: wallet/card/cash"
+        varchar payment_method "how it actually got paid, set at settlement"
         varchar payment_status
+        decimal cancellation_fee
+        varchar cancelled_by
+        text cancel_reason
         timestamptz requested_at
         timestamptz assigned_at
         timestamptz started_at
         timestamptz ended_at
+        timestamptz cancelled_at
     }
 
     PAYMENTS {
         uuid id PK
-        uuid ride_id FK
+        uuid ride_id FK "nullable — null for wallet top-ups"
         uuid user_id FK
         decimal amount
-        varchar method
-        varchar gateway_ref
+        varchar method "wallet, razorpay, or cash"
+        varchar purpose "ride_fare or wallet_topup"
+        varchar gateway_ref "Razorpay order id"
+        varchar gateway_payment_id "Razorpay payment id, set on capture"
         varchar idempotency_key UK
         varchar status
         timestamptz created_at
+    }
+
+    PAYOUT_REQUESTS {
+        uuid id PK
+        uuid driver_id FK
+        decimal amount
+        varchar status "requested, settled, or rejected"
+        text note
+        timestamptz requested_at
+        timestamptz settled_at
     }
 
     WALLET_TRANSACTIONS {
@@ -706,16 +770,39 @@ erDiagram
         decimal lng
     }
 
+    REFERRALS {
+        uuid id PK
+        uuid referrer_id FK
+        uuid referred_id FK UK
+        boolean bonus_credited
+        timestamptz created_at
+    }
+
     USERS ||--o{ RIDES : "books as rider"
     USERS ||--o{ RIDES : "drives as driver"
     USERS ||--|| DRIVERS : "driver profile"
     DRIVERS ||--o{ VEHICLES : "owns vehicle"
     RIDES ||--o{ PAYMENTS : "payment for ride"
+    USERS ||--o{ PAYMENTS : "wallet top-up (ride_id null)"
     USERS ||--o{ WALLET_TRANSACTIONS : "transaction history"
+    USERS ||--o{ PAYOUT_REQUESTS : "driver withdrawal requests"
     RIDES ||--o{ RATINGS : "rated after ride"
     USERS ||--o{ SAVED_ADDRESSES : "saved places"
     PROMO_CODES ||--o{ PROMO_USAGES : "usage tracking"
+    USERS ||--o{ REFERRALS : "referrer"
+    USERS ||--o{ REFERRALS : "referred (max one row)"
 ```
+
+`REFERRALS` is in the same boat as `PROMO_CODES`/`PROMO_USAGES` below —
+`users.referral_code` is generated on signup and returned from the profile
+endpoint, but nothing ever writes to the `referrals` table itself; there's
+no referral-tracking or bonus-crediting flow wired up yet.
+
+`promo_code`/`promo_discount` and the `PROMO_CODES`/`PROMO_USAGES` tables
+are only loosely connected in practice: booking actually validates against
+a hardcoded pair of test codes in `pricing-service`
+(`FIRST50`, `FLAT30`), not a query against `PROMO_CODES` — the table
+exists in the schema but nothing reads or writes it yet.
 
 ---
 
@@ -742,7 +829,6 @@ flowchart LR
 
     subgraph Actions["What Notification Service does"]
         FCM[Firebase FCM Push]
-        EMAIL[Resend Email Receipt]
     end
 
     RS -->|XADD status changes| T1
@@ -751,10 +837,8 @@ flowchart LR
     T1 -->|XREADGROUP at-least-once| NS
     T2 --> NS
 
-    NS -->|driver_assigned → push| FCM
-    NS -->|driver_arrived → push| FCM
-    NS -->|completed → push| FCM
-    NS -->|payment_confirmed → receipt| EMAIL
+    NS -->|driver_assigned/driver_arrived/\nin_progress/completed/cancelled → push| FCM
+    NS -->|payment.processed → "Payment Confirmed" push| FCM
 
     subgraph RedisPS["Redis Pub/Sub — real-time — no message limit"]
         CH1[driver:id:location]
@@ -773,6 +857,19 @@ flowchart LR
     WS -->|SUBSCRIBE| CH3
     WS -->|SUBSCRIBE| CH4
 ```
+
+`payment.failed` and `payment.refunded` are also `XADD`-ed by Payment
+Service, but `notification-service` only creates consumer groups for
+`ride.state_changed` and `payment.processed` — those two streams currently
+have no reader, so a failed or refunded payment doesn't push anything to
+the rider.
+
+**`websocket-hub` loads its Redis connection once at process start** — it
+does not hot-reload if `REDIS_URL` changes in `.env.local`. A stale
+connection still answers `/health` and still accepts Socket.io connections
+(neither needs Redis), so it can look healthy while every `PUBLISH` above
+silently reaches zero subscribers. Restart the process after rotating
+`REDIS_URL`.
 
 ---
 
@@ -852,18 +949,22 @@ Step-by-step trace of exactly what happens in code when a rider taps "Book Ride"
 
 ### Step 1 — Rider PWA triggers booking
 ```
-apps/web/src/components/ride/BookingSheet.tsx
-  → bookRide()
+apps/web/src/components/ride/RideConfirmBar.tsx
+  → bookRide()                                // vehicle type, payment method, promo code (if applied)
   → api.post('/api/v1/rides', payload)        // apps/web/src/lib/api.ts (axios instance)
-  → next.config.ts rewrite → Railway API URL
+  → NEXT_PUBLIC_API_URL                       // Railway in production (see deploy.sh), localhost:3000 in
+                                               // local dev — no next.config.ts rewrite, the axios baseURL
+                                               // just points there directly
 ```
 
 ### Step 2 — Ride Service receives request
 ```
 services/ride-service/src/index.ts            // Fastify server
   → services/ride-service/src/routes/rides.ts // POST /rides handler
-  → getDb() → INSERT INTO rides               // services/ride-service/src/lib/db.ts
-  → publishEvent('ride.state_changed', ...)   // services/ride-service/src/lib/kafka.ts
+  → GET pricing-service /estimate             // fare + surge
+  → POST pricing-service /promo/validate      // if promoCode present — subtracts from fare_estimate
+  → getDb() → INSERT INTO rides               // services/ride-service/src/lib/db.ts — incl. payment_preference, promo_discount
+  → publishEvent('ride.state_changed', ...)   // services/ride-service/src/lib/kafka.ts — file name is legacy, this is Redis Streams now
   → triggerMatching(ride)                     // HTTP POST to Matching Service
 ```
 

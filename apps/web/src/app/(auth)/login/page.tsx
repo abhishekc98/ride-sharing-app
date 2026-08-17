@@ -29,40 +29,55 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-orange-50 to-white px-6">
+    <div className="min-h-screen flex flex-col bg-white px-6">
       <div id="recaptcha-container" />
-      <div className="text-6xl mb-6">🛵</div>
-      <h1 className="text-3xl font-bold text-gray-900 mb-2">RideApp</h1>
-      <p className="text-gray-500 mb-10">Fast, reliable rides</p>
 
-      <form onSubmit={handleSendOTP} className="w-full max-w-sm">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Mobile Number</label>
-        <div className="flex gap-2 mb-4">
-          <span className="flex items-center px-4 bg-gray-100 border border-r-0 rounded-l-xl text-gray-600 text-sm font-medium">
-            🇮🇳 +91
-          </span>
-          <input
-            type="tel"
-            inputMode="numeric"
-            maxLength={10}
-            placeholder="9876543210"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
-            className="flex-1 border rounded-r-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
-          />
+      {/* Hero */}
+      <div className="flex-1 flex flex-col items-center justify-center pb-4">
+        <div className="w-20 h-20 bg-orange-50 rounded-full flex items-center justify-center mb-6">
+          <span className="text-5xl">🛵</span>
         </div>
-        {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading || phone.length !== 10}
-          className="w-full bg-orange-500 text-white rounded-2xl py-4 font-bold text-lg disabled:opacity-50 active:scale-95 transition-transform">
-          {loading ? 'Sending OTP...' : 'Get OTP'}
-        </button>
-      </form>
+        <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-1">RideApp</h1>
+        <p className="text-base text-gray-500 font-medium">Fast, reliable rides across the city</p>
+      </div>
 
-      <p className="text-xs text-gray-400 mt-8 text-center">
-        By continuing, you agree to our Terms of Service & Privacy Policy
-      </p>
+      {/* Form */}
+      <div className="pb-10">
+        <div className="mb-5">
+          <label className="block text-sm font-semibold text-gray-800 mb-2">Mobile Number</label>
+          <div className="flex rounded-xl border-2 border-gray-200 overflow-hidden focus-within:border-orange-500 transition-colors bg-white">
+            <span className="flex items-center px-4 bg-gray-50 border-r-2 border-gray-200 text-gray-700 text-sm font-semibold shrink-0">
+              🇮🇳 +91
+            </span>
+            <input
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="Enter mobile number"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, ''))}
+              className="flex-1 px-4 py-3.5 text-gray-900 text-base font-medium placeholder:text-gray-400 focus:outline-none bg-white"
+            />
+          </div>
+          {error && (
+            <p className="mt-2 text-sm text-red-600 font-medium">⚠ {error}</p>
+          )}
+        </div>
+
+        <button
+          onClick={handleSendOTP}
+          disabled={loading || phone.length !== 10}
+          className="w-full bg-orange-600 hover:bg-orange-700 active:scale-[0.98] text-white rounded-xl py-4 font-bold text-base tracking-wide disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm">
+          {loading ? 'Sending OTP…' : 'Get OTP'}
+        </button>
+
+        <p className="mt-5 text-center text-xs text-gray-400 leading-relaxed">
+          By continuing, you agree to our{' '}
+          <span className="text-gray-600 underline cursor-pointer">Terms of Service</span>
+          {' & '}
+          <span className="text-gray-600 underline cursor-pointer">Privacy Policy</span>
+        </p>
+      </div>
     </div>
   )
 }

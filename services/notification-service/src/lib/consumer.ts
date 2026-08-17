@@ -1,4 +1,4 @@
-import Redis from 'ioredis'
+import { Redis } from 'ioredis'
 import { initFCM, sendPush, sendToTopic } from './fcm.js'
 import pkg from 'pg'
 const { Pool } = pkg

@@ -4,6 +4,12 @@ import { requireDriver, requireAuth } from '../lib/auth.js'
 import { getDb } from '../lib/db.js'
 import { uploadDocument } from '../lib/cloudinary.js'
 
+async function requireAdmin(req: any, reply: any) {
+  await requireAuth(req, reply)
+  if (reply.sent) return
+  if (req.user?.role !== 'admin') return reply.code(403).send({ error: 'Forbidden', code: 'FORBIDDEN' })
+}
+
 const vehicleSchema = z.object({
   type: z.enum(['bike', 'auto', 'cab']),
   make: z.string().min(1),
@@ -95,7 +101,15 @@ export async function driverRoutes(app: FastifyInstance) {
       [user.sub]
     )
     const driver = await db.query('SELECT pending_payout FROM drivers WHERE id = $1', [user.sub])
-    return { data: { ...rows[0], pendingPayout: driver.rows[0]?.pending_payout ?? 0 } }
+    return {
+      data: {
+        today: Number(rows[0].today),
+        this_week: Number(rows[0].this_week),
+        this_month: Number(rows[0].this_month),
+        total: Number(rows[0].total),
+        pendingPayout: Number(driver.rows[0]?.pending_payout ?? 0),
+      },
+    }
   })
 
   // Trip history for driver
@@ -112,6 +126,37 @@ export async function driverRoutes(app: FastifyInstance) {
       [user.sub, limit, offset]
     )
     return { data: rows }
+  })
+
+  // Admin: list drivers, optionally filtered by KYC status
+  app.get('/admin/drivers', { preHandler: requireAdmin }, async (req) => {
+    const { kycStatus, page = '1', limit = '20' } = req.query as Record<string, string>
+    const offset = (Number(page) - 1) * Number(limit)
+    const db = getDb()
+    const base = `
+      SELECT d.id, d.kyc_status, d.kyc_docs, d.status, d.rating, d.total_rides, d.acceptance_rate,
+             u.name, u.phone, u.profile_photo_url, u.created_at,
+             v.type as vehicle_type, v.make, v.model, v.plate_no
+      FROM drivers d
+      LEFT JOIN users u ON u.id = d.id
+      LEFT JOIN vehicles v ON v.id = d.vehicle_id`
+    const { rows } = kycStatus
+      ? await db.query(`${base} WHERE d.kyc_status = $1 ORDER BY u.created_at DESC LIMIT $2 OFFSET $3`, [kycStatus, limit, offset])
+      : await db.query(`${base} ORDER BY u.created_at DESC LIMIT $1 OFFSET $2`, [limit, offset])
+    return { data: rows }
+  })
+
+  // Admin: approve or reject a driver's KYC submission
+  app.post('/admin/drivers/:id/kyc', { preHandler: requireAdmin }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const { status } = z.object({ status: z.enum(['approved', 'rejected']) }).parse(req.body)
+    const db = getDb()
+    const { rows } = await db.query(
+      `UPDATE drivers SET kyc_status = $1 WHERE id = $2 RETURNING id, kyc_status`,
+      [status, id]
+    )
+    if (!rows[0]) return reply.code(404).send({ error: 'Driver not found', code: 'NOT_FOUND' })
+    return { data: rows[0] }
   })
 
   app.get('/drivers/health', async () => ({ status: 'ok' }))
