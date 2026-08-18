@@ -89,3 +89,27 @@ services:
     envVars:
       - key: REDIS_URL
         sync: false
+
+  # Frontends (Next.js standalone output, built via Docker like the backend).
+  # NEXT_PUBLIC_* values are baked in at build time inside each Dockerfile
+  # (they're public-by-design keys, not secrets), so no envVars needed here.
+  - type: web
+    name: ride-web
+    runtime: docker
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    plan: free
+
+  - type: web
+    name: ride-driver-web
+    runtime: docker
+    dockerfilePath: ./apps/driver-web/Dockerfile
+    dockerContext: .
+    plan: free
+
+  - type: web
+    name: ride-admin
+    runtime: docker
+    dockerfilePath: ./apps/admin/Dockerfile
+    dockerContext: .
+    plan: free

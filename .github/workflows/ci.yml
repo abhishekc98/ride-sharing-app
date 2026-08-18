@@ -48,7 +48,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build ${{ matrix.app }}
-        run: pnpm --filter "@ride/${{ matrix.app }}" build
+        run: pnpm --filter "${{ matrix.app }}" build
         env:
           NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
           NEXT_PUBLIC_WS_URL: ${{ secrets.NEXT_PUBLIC_WS_URL }}
