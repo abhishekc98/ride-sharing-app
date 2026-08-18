@@ -55,34 +55,10 @@ jobs:
           NEXT_PUBLIC_FIREBASE_API_KEY: placeholder
           NEXT_PUBLIC_DEV_BYPASS_OTP: 'true'
 
-  # Render deployments (3 services):
-  #   services/api/          → merged Node.js API (all 9 services)
-  #   services/websocket-hub/ → Socket.io hub
-  #   services/pricing-service/ → Python FastAPI
-  # Render auto-deploys from GitHub on push to main — no Docker push step needed here.
-  # To trigger a manual deploy: push to main or use Render dashboard.
-
-  build-api-docker:
-    runs-on: ubuntu-latest
-    needs: lint-and-typecheck
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-    strategy:
-      matrix:
-        service: [api, websocket-hub]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push ${{ matrix.service }}
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: services/${{ matrix.service }}/Dockerfile
-          push: true
-          tags: ghcr.io/${{ github.repository }}/${{ matrix.service }}:latest
+  # Deployment (3 services):
+  #   services/api/          → merged Node.js API (all 9 services) — Render, deploys from GitHub source
+  #   services/websocket-hub/ → Socket.io hub — Railway, deploys from GitHub source
+  #   services/pricing-service/ → Python FastAPI — Render, deploys from GitHub source
+  # Both Render and Railway build and deploy directly from the GitHub repo on push
+  # to main. No Docker image is published or consumed anywhere, so there is no
+  # build-and-push-to-registry job here.
