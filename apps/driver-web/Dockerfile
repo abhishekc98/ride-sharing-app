@@ -24,7 +24,9 @@ ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=ride-sharing-app-2950b
 ENV NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=980803971174
 ENV NEXT_PUBLIC_FIREBASE_APP_ID=1:980803971174:web:9081a4fe86c28326a665a7
 ENV NEXT_PUBLIC_RAZORPAY_KEY_ID=rzp_test_Sw7qRQdlMOV6Lc
-ENV NEXT_PUBLIC_DEV_BYPASS_OTP=false
+# No active Firebase Blaze billing, so real phone-SMS OTP can't be sent --
+# see render.yaml for the full explanation and the security caveat.
+ENV NEXT_PUBLIC_DEV_BYPASS_OTP=true
 
 RUN pnpm --filter driver-web build
 

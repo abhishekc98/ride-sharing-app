@@ -23,7 +23,14 @@ services:
       - key: NODE_ENV
         value: production
       - key: DEV_BYPASS_OTP
-        value: "false"
+        # No active Firebase Blaze billing, so real phone-SMS OTP can't be sent.
+        # Also required as-is for ride-admin's login, which always sends a
+        # dev_token_* string regardless of this flag (see apps/admin/src/app/login/page.tsx).
+        # SECURITY: while true, any phone number logs in with OTP 000000 --
+        # anyone can authenticate as any user. Flip back to "false" once a real
+        # OTP channel (Firebase Blaze, or email OTP via the existing Resend
+        # account) is wired up.
+        value: "true"
       - key: PRICING_SERVICE_URL
         sync: false # set after ride-pricing exists, e.g. https://ride-pricing.onrender.com
       - key: DATABASE_URL
