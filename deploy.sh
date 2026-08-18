@@ -65,19 +65,26 @@ NEXT_VARS=(
 deploy_vercel_app() {
   local app_dir=$1
   local app_name=$2
+  local out_var=$3
   log "  Deploying $app_name to Vercel..."
   cd "$app_dir"
   ENV_ARGS=""
   for var in "${NEXT_VARS[@]}"; do
     ENV_ARGS="$ENV_ARGS -e $var"
   done
-  vercel deploy --prod --yes $ENV_ARGS 2>/dev/null || warn "  $app_name: vercel deploy may need manual confirmation"
+  local url
+  url=$(vercel deploy --prod --yes $ENV_ARGS 2>/dev/null | tail -1)
   cd - > /dev/null
+  if [ -z "$url" ]; then
+    warn "  $app_name: vercel deploy may need manual confirmation"
+    url="(check 'vercel ls' for URL)"
+  fi
+  printf -v "$out_var" '%s' "$url"
 }
 
-deploy_vercel_app "apps/web" "Rider PWA"
-deploy_vercel_app "apps/driver-web" "Driver PWA"
-deploy_vercel_app "apps/admin" "Admin Dashboard"
+deploy_vercel_app "apps/web" "Rider PWA" RIDER_URL
+deploy_vercel_app "apps/driver-web" "Driver PWA" DRIVER_URL
+deploy_vercel_app "apps/admin" "Admin Dashboard" ADMIN_URL
 
 # ── 5. Seed database (first deploy only) ───────────────────────
 log "Seeding database with dev data (safe to skip if already seeded)..."
@@ -89,9 +96,9 @@ echo -e "${GREEN}═════════════════════
 echo -e "${GREEN}  ✅ DEPLOYMENT COMPLETE${NC}"
 echo -e "${GREEN}═══════════════════════════════════════════════${NC}"
 echo ""
-echo "  Rider App:   https://ride-web.vercel.app"
-echo "  Driver App:  https://ride-driver-web.vercel.app"
-echo "  Admin:       https://ride-admin.vercel.app"
+echo "  Rider App:   $RIDER_URL"
+echo "  Driver App:  $DRIVER_URL"
+echo "  Admin:       $ADMIN_URL"
 echo "  API:         $NEXT_PUBLIC_API_URL"
 echo "  WebSocket:   $NEXT_PUBLIC_WS_URL"
 echo ""
