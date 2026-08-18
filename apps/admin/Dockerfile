@@ -31,6 +31,10 @@ RUN pnpm --filter admin build
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
+# Next.js standalone server.js binds to this address -- without it, it only
+# listens on loopback inside the container and Render's proxy can't reach it
+# (502, even though the process itself logs "Ready" and looks healthy).
+ENV HOSTNAME=0.0.0.0
 COPY --from=builder /app/apps/admin/public ./apps/admin/public
 COPY --from=builder /app/apps/admin/.next/standalone ./
 COPY --from=builder /app/apps/admin/.next/static ./apps/admin/.next/static
