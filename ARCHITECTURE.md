@@ -144,7 +144,7 @@ flowchart LR
         RT2[GET /ratings/ride/:id]
     end
 
-    subgraph WS["WebSocket Hub :3200\nRailway (kept awake by UptimeRobot)"]
+    subgraph WS["WebSocket Hub :3200\nRender (kept awake by UptimeRobot)"]
         WS1[ride:id room]
         WS2[user:id room]
         WS3[admin:ops room]
@@ -512,7 +512,7 @@ flowchart TB
         CH5[channel:\ndrivers:availability]
     end
 
-    subgraph WSCluster["WebSocket Hub Cluster\nRailway — kept awake by UptimeRobot pings"]
+    subgraph WSCluster["WebSocket Hub Cluster\nRender — kept awake by UptimeRobot pings"]
         subgraph Pod1["WS Pod 1"]
             S1[Socket.io Server]
             RA1[Redis Adapter]
@@ -895,20 +895,12 @@ flowchart TB
         CDN[Edge CDN\n30+ global PoPs]
     end
 
-    subgraph Railway["Railway — Free 5 USD/month credit"]
+    subgraph Render["Render — Free, no credit card"]
         direction TB
-        RW1[auth-service :3101]
-        RW2[user-service :3102]
-        RW3[driver-service :3103]
-        RW4[location-service :3104]
-        RW5[ride-service :3105]
-        RW6[matching-service :3106]
-        RW7[pricing-service :3107\nPython FastAPI]
-        RW8[payment-service :3108]
-        RW9[notification-service :3109]
-        RW10[rating-service :3110]
-        WS[websocket-hub :3200\nSocket.io + Redis adapter]
-        UPT[UptimeRobot pings every 5 min\nkeeps all services awake]
+        RA[ride-api\nAll 9 Node.js services merged, :3000]
+        WS[ride-websocket-hub\nSocket.io + Redis adapter]
+        RP7[ride-pricing\nPython FastAPI]
+        UPT[UptimeRobot pings every 5 min\nkeeps all 3 services awake]
     end
 
     subgraph Data["Data Layer"]
@@ -924,22 +916,24 @@ flowchart TB
         RSN[Resend\nEmail]
     end
 
-    subgraph GHCR["GitHub — Free"]
-        GH[GitHub Repo\nSource of truth]
-        GA[GitHub Actions CI\nLint + Build + Push Docker images]
-        REG[Container Registry\nghcr.io images]
+    subgraph GH["GitHub — Free"]
+        GHR[GitHub Repo\nSource of truth]
     end
 
     B -->|HTTPS| CF
     CF --> Vercel
-    Vercel -->|API calls| Railway
-    Vercel -->|WSS| Railway
+    Vercel -->|API calls| Render
+    Vercel -->|WSS| Render
 
-    Railway --> Data
-    Railway --> ThirdParty
+    Render --> Data
+    Render --> ThirdParty
 
-    GH --> GA --> REG --> Railway
+    GHR -->|Blueprint sync, git push\nRender builds each Dockerfile itself| Render
 ```
+
+Render builds each service's `Dockerfile` directly from the repo on every
+push (see `render.yaml`) — there is no container registry step and no
+Docker image is published anywhere.
 
 ---
 
@@ -952,7 +946,7 @@ Step-by-step trace of exactly what happens in code when a rider taps "Book Ride"
 apps/web/src/components/ride/RideConfirmBar.tsx
   → bookRide()                                // vehicle type, payment method, promo code (if applied)
   → api.post('/api/v1/rides', payload)        // apps/web/src/lib/api.ts (axios instance)
-  → NEXT_PUBLIC_API_URL                       // Railway in production (see deploy.sh), localhost:3000 in
+  → NEXT_PUBLIC_API_URL                       // Render in production (see render.yaml), localhost:3000 in
                                                // local dev — no next.config.ts rewrite, the axios baseURL
                                                // just points there directly
 ```
@@ -1082,9 +1076,8 @@ POST /rides/rideA/accept
 ```
 .env.keys (your machine, never committed)
     ↓
-Railway env vars (set by deploy.sh)       → backend services
-Vercel env vars (set by deploy.sh)        → NEXT_PUBLIC_* frontend vars
-Railway env vars (set by deploy.sh)       → websocket-hub (same Railway project)
+Render env vars (set once in Dashboard, per render.yaml) → backend services
+Vercel env vars (set by deploy.sh)                        → NEXT_PUBLIC_* frontend vars
 ```
 
 ---

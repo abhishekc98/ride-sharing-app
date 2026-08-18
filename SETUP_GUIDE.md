@@ -8,8 +8,10 @@ Follow these steps in order. After each step, copy the key/URL into `.env.keys`.
 
 Install CLIs:
 ```bash
-npm install -g vercel @railway/cli
+npm install -g vercel
 ```
+
+(Render has no CLI step here — it deploys by connecting to GitHub, see Step 3.)
 
 ---
 
@@ -21,7 +23,7 @@ npm install -g vercel @railway/cli
 4. Run in project root:
 ```bash
 git remote add origin https://github.com/YOUR_USERNAME/ride-sharing-app.git
-git push -u origin master
+git push -u origin main
 ```
 
 No keys needed — GitHub is used via OAuth by all other services.
@@ -38,13 +40,37 @@ No keys needed — Vercel CLI uses GitHub auth.
 
 ---
 
-## Step 3 — Railway (1 min)
+## Step 3 — Render (5 min)
 
-1. Go to https://railway.app
-2. Click "Login with GitHub" → authorize
-3. You're done — `./deploy.sh` creates services via Railway CLI
+Render hosts all 3 backend services (`api`, `websocket-hub`, `pricing-service`),
+each built straight from its `Dockerfile` in this repo — no Docker registry
+involved.
 
-No keys needed — Railway CLI uses GitHub auth.
+1. Go to https://render.com → "Get Started" → sign up with GitHub
+2. Dashboard → "New +" → "Blueprint"
+3. Select this repo → Render reads `render.yaml` at the root and shows the
+   3 services it's about to create (`ride-api`, `ride-websocket-hub`,
+   `ride-pricing`) → click "Apply"
+4. Render creates the services and starts the first build (it will fail or
+   sit unhealthy until you fill in secrets below — that's expected)
+5. For **each** service → "Environment" tab → fill in the variables marked
+   `sync: false` in `render.yaml`, using the values you've collected in
+   `.env.keys` so far (`DATABASE_URL`, `REDIS_URL`, `MONGODB_URL`,
+   `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, Firebase/Razorpay/Cloudinary/
+   Resend keys as you get them in later steps, `INTERNAL_SERVICE_SECRET` —
+   generate one with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+   and reuse it across all services that need it)
+6. `ride-pricing` needs no service-to-service value, so let it deploy first
+   and copy its URL (Dashboard → `ride-pricing` → top of page, e.g.
+   `https://ride-pricing.onrender.com`). Paste that into `ride-api`'s
+   `PRICING_SERVICE_URL` env var — it's the one variable that depends on
+   another Render service existing first.
+7. Each save triggers a redeploy. Once `ride-api` and `ride-websocket-hub`
+   go green, note their URLs too (same place, e.g.
+   `https://ride-api.onrender.com`) — you'll need them in Step 13.
+
+No further CLI steps for Render — every `git push origin main` after this
+redeploys automatically.
 
 ---
 
@@ -214,35 +240,48 @@ EMAIL_FROM=noreply@yourdomain.com
 
 ## Step 12 — UptimeRobot (2 min)
 
-The WebSocket Hub runs on Railway (free tier sleeps after 30 min idle).
-UptimeRobot pings it every 5 minutes to keep it alive.
+Render's free plan spins down web services after ~15 min of inactivity
+(cold start on the next request). UptimeRobot pings each service every 5
+minutes to keep them warm.
 
 1. Go to https://uptimerobot.com → Sign up free
-2. Dashboard → "Add New Monitor"
+2. Dashboard → "Add New Monitor" for each of the 3 Render services, using
+   the actual URL each one got in Step 3 (Render appends a random suffix
+   if `ride-api` etc. was already taken by someone else, e.g.
+   `ride-api-a1b2.onrender.com`):
    - Monitor type: HTTP(s)
-   - Friendly name: `RideApp WebSocket Hub`
-   - URL: `https://websocket-hub.up.railway.app/health` (update after deploy)
+   - Friendly name: `RideApp API` / `RideApp WebSocket Hub` / `RideApp Pricing`
+   - URL: `<ride-api URL>/health`, `<ride-websocket-hub URL>/health`,
+     `<ride-pricing URL>` (no `/health` route on this one — the bare URL
+     still keeps it warm)
    - Monitoring interval: 5 minutes
-3. Repeat for `api-gateway` and `ride-service`
 
-No keys needed — just a Railway service URL.
+No keys needed — just the Render service URLs from Step 3.
 
 ---
 
 ## Step 13 — Run Deploy
 
-Now authenticate the CLIs:
-```bash
-vercel login       # GitHub OAuth in browser
-railway login      # GitHub OAuth in browser
+Render is already live from Step 3 — it redeploys on every `git push origin
+main` from here on, no CLI needed.
+
+Add the Render URLs you noted in Step 3 to `.env.keys`:
+```
+NEXT_PUBLIC_API_URL=https://ride-api.onrender.com          # your actual ride-api URL
+NEXT_PUBLIC_WS_URL=wss://ride-websocket-hub.onrender.com   # your actual ride-websocket-hub URL, wss:// not https://
 ```
 
-Then deploy everything:
+Authenticate Vercel:
+```bash
+vercel login       # GitHub OAuth in browser
+```
+
+Then run migrations and deploy the 3 PWAs:
 ```bash
 ./deploy.sh
 ```
 
-That's it. Watch the terminal. Your 3 PWAs will be live in ~10 minutes.
+That's it. Watch the terminal — your 3 PWAs will be live in a couple of minutes.
 
 ---
 

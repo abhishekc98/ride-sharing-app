@@ -55,10 +55,10 @@ jobs:
           NEXT_PUBLIC_FIREBASE_API_KEY: placeholder
           NEXT_PUBLIC_DEV_BYPASS_OTP: 'true'
 
-  # Deployment (3 services):
-  #   services/api/          → merged Node.js API (all 9 services) — Render, deploys from GitHub source
-  #   services/websocket-hub/ → Socket.io hub — Railway, deploys from GitHub source
-  #   services/pricing-service/ → Python FastAPI — Render, deploys from GitHub source
-  # Both Render and Railway build and deploy directly from the GitHub repo on push
-  # to main. No Docker image is published or consumed anywhere, so there is no
-  # build-and-push-to-registry job here.
+  # Deployment (3 services, see render.yaml):
+  #   services/api/             → merged Node.js API (all 9 services)
+  #   services/websocket-hub/   → Socket.io hub
+  #   services/pricing-service/ → Python FastAPI
+  # All 3 are Render Docker web services that build straight from their own
+  # Dockerfile on every push to main (Render Blueprint sync). No image is
+  # ever published to a registry, so there is no build-and-push job here.

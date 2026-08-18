@@ -66,15 +66,19 @@ pnpm --filter @ride/admin dev               # :3003 (Admin)
 
 ## Cloud Deployment (Render — free, no credit card)
 
-3 Render web services, 3 Vercel apps:
+3 Render web services (each built directly from its `Dockerfile` — no
+container registry involved), 3 Vercel apps:
 
 | Render Service | Source | Notes |
 |---------------|--------|-------|
-| `api` | `services/api/` | All 9 Node.js services merged |
-| `websocket-hub` | `services/websocket-hub/` | Socket.io, UptimeRobot keep-alive |
-| `pricing` | `services/pricing-service/` | Python FastAPI |
+| `ride-api` | `services/api/` | All 9 Node.js services merged |
+| `ride-websocket-hub` | `services/websocket-hub/` | Socket.io, UptimeRobot keep-alive |
+| `ride-pricing` | `services/pricing-service/` | Python FastAPI |
 
-See `SETUP_GUIDE.md` for the 30-minute setup, then `./deploy.sh`.
+Render services are declared in `render.yaml` (a Blueprint) — connect the
+repo once via Render Dashboard → New → Blueprint, and every push to `main`
+redeploys automatically after that. See `SETUP_GUIDE.md` for the full
+30-minute setup, then `./deploy.sh` for migrations + the 3 Vercel apps.
 
 ## Architecture
 

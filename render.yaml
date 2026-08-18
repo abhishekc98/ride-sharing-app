@@ -1,0 +1,91 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Connect this repo once via Render Dashboard → New → Blueprint. Render reads
+# this file and creates the 3 services below, each built from its Dockerfile
+# directly (build context = repo root, matching how the Dockerfiles COPY from
+# packages/ and services/). No container registry involved — Render builds
+# and runs the image itself.
+#
+# After the first Blueprint sync, every `git push` to main redeploys whatever
+# changed. Secrets marked `sync: false` are NOT stored here — fill them in
+# once via the Render Dashboard after the services are created (see
+# SETUP_GUIDE.md for where each value comes from).
+
+services:
+  - type: web
+    name: ride-api
+    runtime: docker
+    dockerfilePath: ./services/api/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEV_BYPASS_OTP
+        value: "false"
+      - key: PRICING_SERVICE_URL
+        sync: false # set after ride-pricing exists, e.g. https://ride-pricing.onrender.com
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: MONGODB_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 30d
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  - type: web
+    name: ride-websocket-hub
+    runtime: docker
+    dockerfilePath: ./services/websocket-hub/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+
+  - type: web
+    name: ride-pricing
+    runtime: docker
+    dockerfilePath: ./services/pricing-service/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: REDIS_URL
+        sync: false
