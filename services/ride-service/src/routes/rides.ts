@@ -44,7 +44,8 @@ export async function rideRoutes(app: FastifyInstance) {
         params: { pickupLat, pickupLng, dropLat, dropLng, vehicleType },
       })
       return { data: res.data.data }
-    } catch {
+    } catch (err: any) {
+      req.log.error({ err: err?.message, code: err?.code, status: err?.response?.status, data: err?.response?.data, pricingServiceUrl: process.env.PRICING_SERVICE_URL }, 'pricing estimate call failed')
       return reply.code(502).send({ error: 'Pricing service unavailable', code: 'PRICING_ERROR' })
     }
   })
@@ -57,7 +58,8 @@ export async function rideRoutes(app: FastifyInstance) {
         code, fareAmount: Number(fareAmount),
       })
       return { data: res.data.data }
-    } catch {
+    } catch (err: any) {
+      req.log.error({ err: err?.message, code: err?.code, status: err?.response?.status, data: err?.response?.data }, 'promo validate call failed')
       return reply.code(502).send({ error: 'Pricing service unavailable', code: 'PRICING_ERROR' })
     }
   })
