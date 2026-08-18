@@ -10,6 +10,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
 COPY packages/shared-types ./packages/shared-types
 COPY services/websocket-hub ./services/websocket-hub
 COPY tsconfig.base.json ./
