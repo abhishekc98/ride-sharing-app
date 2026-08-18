@@ -35,4 +35,4 @@ COPY services/rating-service/src ./services/rating-service/src
 
 ENV NODE_ENV=production
 EXPOSE 3000
-CMD ["tsx", "services/api/src/index.ts"]
+CMD ["pnpm", "--filter", "@ride/api", "start"]

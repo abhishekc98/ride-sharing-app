@@ -84,7 +84,7 @@ services:
     name: ride-pricing
     runtime: docker
     dockerfilePath: ./services/pricing-service/Dockerfile
-    dockerContext: .
+    dockerContext: ./services/pricing-service
     plan: free
     envVars:
       - key: REDIS_URL
